@@ -25,6 +25,7 @@ async function recreateCollection() {
       { name: "brand", type: "string", facet: true, optional: true },
       { name: "sold_by", type: "string", facet: true, optional: true },
       { name: "categories", type: "string[]", facet: true, optional: true },
+      { name: "category_url_pairs", type: "string[]", optional: true },
       { name: "category_ids", type: "int32[]", facet: true, optional: true },
       { name: "description", type: "string", optional: true },
       { name: "custom_fields_text", type: "string", optional: true },

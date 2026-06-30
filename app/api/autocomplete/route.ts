@@ -16,6 +16,21 @@ function fixUrl(url: string | undefined) {
   return `${STORE_URL}${url.startsWith("/") ? "" : "/"}${url}`;
 }
 
+function categoryUrlMapFromHits(hits: any[] = []) {
+  const map = new Map<string, string>();
+
+  for (const hit of hits) {
+    const pairs = hit.document?.category_url_pairs || [];
+    for (const pair of pairs) {
+      const [name, ...urlParts] = String(pair).split("|");
+      const url = urlParts.join("|");
+      if (name && url && !map.has(name)) map.set(name, url);
+    }
+  }
+
+  return map;
+}
+
 function normalizeHit(doc: any) {
   return {
     id: doc.id,
@@ -69,12 +84,21 @@ export async function GET(req: NextRequest) {
       highlight_full_fields: "name,sku,brand,sold_by,categories,variant_label,option_text"
     });
 
-  const products = results.hits?.map((hit: any) => normalizeHit(hit.document)) || [];
+  const hits = results.hits || [];
+  const products = hits.map((hit: any) => normalizeHit(hit.document));
+
+  const categoryUrls = categoryUrlMapFromHits(hits);
 
   const facets =
     results.facet_counts?.map((facet: any) => ({
       field: facet.field_name,
-      values: facet.counts?.slice(0, 7) || []
+      values:
+        facet.field_name === "categories"
+          ? (facet.counts?.slice(0, 7) || []).map((item: any) => ({
+              ...item,
+              url: categoryUrls.get(item.value) || ""
+            }))
+          : facet.counts?.slice(0, 7) || []
     })) || [];
 
   return NextResponse.json({ products, facets }, { headers: corsHeaders });

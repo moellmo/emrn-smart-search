@@ -202,6 +202,14 @@ export async function getAllProductsForSearch() {
       .map((id) => categoriesMap.get(id)?.name || "")
       .filter(Boolean);
 
+    const categoryUrlPairs = (product.categories || [])
+      .map((id) => {
+        const category = categoriesMap.get(id);
+        if (!category?.name || !category.custom_url?.url) return "";
+        return `${category.name}|${absoluteStoreUrl(category.custom_url.url)}`;
+      })
+      .filter(Boolean);
+
     const categoryIds = product.categories || [];
     const enabledVariants = (product.variants || []).filter(variantIsEnabled);
 
@@ -275,6 +283,7 @@ export async function getAllProductsForSearch() {
         brand,
         sold_by: soldBy,
         categories,
+        category_url_pairs: categoryUrlPairs,
         category_ids: categoryIds,
         description,
         custom_fields_text: customFieldText,
