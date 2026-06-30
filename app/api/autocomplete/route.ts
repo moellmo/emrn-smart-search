@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { typesenseSearch } from "../../../lib/typesense";
+import { expandSearchQuery, getFallbackTerms } from "../../../lib/search-language";
 
 const COLLECTION_NAME = "emrn_products";
 const STORE_URL = process.env.EMRN_STORE_URL || "https://emrn.ca";
@@ -49,15 +50,12 @@ function normalizeHit(doc: any) {
     option_text: doc.option_text || "",
     variant_label: doc.variant_label || "",
     availability: doc.availability,
-    availability_description: doc.availability_description
+    availability_description: doc.availability_description,
   };
 }
 
 export async function OPTIONS() {
-  return new NextResponse(null, {
-    status: 204,
-    headers: corsHeaders,
-  });
+  return new NextResponse(null, { status: 204, headers: corsHeaders });
 }
 
 export async function GET(req: NextRequest) {
@@ -68,11 +66,13 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ products: [], facets: [] }, { headers: corsHeaders });
   }
 
-  const results = await typesenseSearch
+  const expandedQuery = expandSearchQuery(q);
+
+  const results: any = await typesenseSearch
     .collections(COLLECTION_NAME)
     .documents()
     .search({
-      q,
+      q: expandedQuery.expanded,
       query_by: "sku,all_skus,name,parent_name,brand,sold_by,categories,variant_label,option_text,search_text",
       query_by_weights: "30,24,16,12,8,7,6,5,5,3",
       filter_by: "is_visible:=true",
@@ -81,12 +81,11 @@ export async function GET(req: NextRequest) {
       num_typos: 2,
       typo_tokens_threshold: 1,
       prefix: true,
-      highlight_full_fields: "name,sku,brand,sold_by,categories,variant_label,option_text"
+      highlight_full_fields: "name,sku,brand,sold_by,categories,variant_label,option_text",
     });
 
   const hits = results.hits || [];
   const products = hits.map((hit: any) => normalizeHit(hit.document));
-
   const categoryUrls = categoryUrlMapFromHits(hits);
 
   const facets =
@@ -96,10 +95,20 @@ export async function GET(req: NextRequest) {
         facet.field_name === "categories"
           ? (facet.counts?.slice(0, 7) || []).map((item: any) => ({
               ...item,
-              url: categoryUrls.get(item.value) || ""
+              url: categoryUrls.get(item.value) || "",
             }))
-          : facet.counts?.slice(0, 7) || []
+          : facet.counts?.slice(0, 7) || [],
     })) || [];
 
-  return NextResponse.json({ products, facets }, { headers: corsHeaders });
+  return NextResponse.json(
+    {
+      products,
+      facets,
+      language: expandedQuery.language,
+      expanded_query: expandedQuery.expanded,
+      expansions: expandedQuery.expansions,
+      fallback_terms: products.length ? [] : getFallbackTerms(q),
+    },
+    { headers: corsHeaders }
+  );
 }
