@@ -14,7 +14,7 @@
   const isTestMode = new URLSearchParams(window.location.search).get(config.testParam) === "1";
   if (!config.enabled && !isTestMode) return;
 
-  console.log("[EMRN SmartSearch] force listener loaded");
+  console.log("[EMRN SmartSearch] interaction fix loaded");
 
   const POPULAR_SEARCHES = [
     "gloves",
@@ -45,8 +45,8 @@
   style.textContent = `
     .emrn-smartsearch-overlay {
       position: fixed !important;
-      width: min(760px, calc(100vw - 24px));
-      max-width: 760px;
+      width: min(680px, calc(100vw - 24px));
+      max-width: 680px;
       background: #fff;
       border: 1px solid #ead7d8;
       border-radius: 22px;
@@ -58,7 +58,7 @@
     }
     .emrn-smartsearch-grid {
       display: grid;
-      grid-template-columns: 1.45fr .85fr;
+      grid-template-columns: 1.35fr .85fr;
     }
     .emrn-smartsearch-products {
       padding: 18px;
@@ -184,6 +184,7 @@
       font-size: 12px;
       cursor: pointer;
       color: #1f2937;
+      text-align: left;
     }
     .emrn-smartsearch-chip:hover {
       border-color: #c34d50;
@@ -226,6 +227,15 @@
       font-size: 14px;
       line-height: 1.4;
     }
+    body.emrn-smartsearch-active .fast-autocomplete,
+    body.emrn-smartsearch-active .fast-autocomplete-results,
+    body.emrn-smartsearch-active .autocomplete-suggestions,
+    body.emrn-smartsearch-active [class*="fast-autocomplete"],
+    body.emrn-smartsearch-active [id*="fast-autocomplete"] {
+      display: none !important;
+      visibility: hidden !important;
+      opacity: 0 !important;
+    }
     @media (max-width: 760px) {
       .emrn-smartsearch-overlay {
         left: 10px !important;
@@ -254,6 +264,10 @@
 
   function getInput() {
     return SELECTORS.map((sel) => document.querySelector(sel)).find(Boolean);
+  }
+
+  function isSearchInput(el) {
+    return !!(el && el.matches && SELECTORS.some((sel) => el.matches(sel)));
   }
 
   function getRecentSearches() {
@@ -286,7 +300,14 @@
       .replaceAll("'", "&#039;");
   }
 
-  function sideCard(title, items) {
+  function goToResults(term) {
+    const q = String(term || activeInput?.value || "").trim();
+    if (q.length < 2) return;
+    saveRecentSearch(q);
+    window.location.href = `${config.searchResultsUrl}?q=${encodeURIComponent(q)}`;
+  }
+
+  function sideCard(title, items, clickMode = "refine") {
     if (!items || !items.length) return "";
     return `
       <div class="emrn-smartsearch-card">
@@ -297,7 +318,7 @@
             .map((item) => {
               const value = typeof item === "string" ? item : item.value;
               const count = typeof item === "string" ? "" : ` <small>(${item.count})</small>`;
-              return `<button type="button" class="emrn-smartsearch-chip" data-emrn-search="${escapeHtml(value)}">${escapeHtml(value)}${count}</button>`;
+              return `<button type="button" class="emrn-smartsearch-chip" data-emrn-search="${escapeHtml(value)}" data-emrn-mode="${clickMode}">${escapeHtml(value)}${count}</button>`;
             })
             .join("")}
         </div>
@@ -333,6 +354,7 @@
     overlay = document.createElement("div");
     overlay.className = "emrn-smartsearch-overlay";
     overlay.hidden = true;
+    overlay.style.display = "none";
     document.body.appendChild(overlay);
 
     overlay.addEventListener("mousedown", (e) => {
@@ -342,27 +364,45 @@
     overlay.addEventListener("click", (e) => {
       const chip = e.target.closest("[data-emrn-search]");
       if (chip && activeInput) {
-        activeInput.value = chip.getAttribute("data-emrn-search") || "";
-        saveRecentSearch(activeInput.value);
-        scheduleRender(true);
+        const term = chip.getAttribute("data-emrn-search") || "";
+        const mode = chip.getAttribute("data-emrn-mode") || "refine";
+
+        activeInput.value = term;
+        saveRecentSearch(term);
+
+        if (mode === "navigate") {
+          goToResults(term);
+          return;
+        }
+
+        lastRendered = "";
+        renderResults(term);
         activeInput.focus();
       }
-    });
+
+      const viewAll = e.target.closest("[data-emrn-viewall]");
+      if (viewAll && activeInput) {
+        goToResults(activeInput.value);
+      }
+    }, true);
 
     return overlay;
   }
 
   function positionOverlay() {
     if (!activeInput || !overlay) return;
+
     const rect = activeInput.getBoundingClientRect();
     const viewportWidth = window.innerWidth || document.documentElement.clientWidth;
-    const desiredWidth = Math.min(760, viewportWidth - 24);
-    let left = rect.left;
 
-    if (left + desiredWidth > viewportWidth - 12) left = viewportWidth - desiredWidth - 12;
+    const width = Math.min(680, viewportWidth - 24);
+    const center = rect.left + rect.width / 2;
+
+    let left = center - width / 2;
     if (left < 12) left = 12;
+    if (left + width > viewportWidth - 12) left = viewportWidth - width - 12;
 
-    overlay.style.width = `${desiredWidth}px`;
+    overlay.style.width = `${width}px`;
     overlay.style.left = `${left}px`;
     overlay.style.top = `${rect.bottom + 10}px`;
   }
@@ -372,12 +412,14 @@
     positionOverlay();
     overlay.hidden = false;
     overlay.style.display = "block";
+    document.body.classList.add("emrn-smartsearch-active");
   }
 
   function hideOverlay() {
     if (!overlay) return;
     overlay.hidden = true;
     overlay.style.display = "none";
+    document.body.classList.remove("emrn-smartsearch-active");
   }
 
   function renderStarter() {
@@ -460,9 +502,9 @@
             }
           </div>
           <div class="emrn-smartsearch-side">
-            ${sideCard("Suggested Brands", brandFacet?.values || [])}
-            ${sideCard("Suggested Categories", categoryFacet?.values || [])}
-            ${sideCard("Popular searches", POPULAR_SEARCHES)}
+            ${sideCard("Suggested Brands", brandFacet?.values || [], "refine")}
+            ${sideCard("Suggested Categories", categoryFacet?.values || [], "refine")}
+            ${sideCard("Popular searches", POPULAR_SEARCHES, "refine")}
             <div class="emrn-smartsearch-help">
               Can’t find the item?
               <strong>Request a quote and EMRN can help source it.</strong>
@@ -471,14 +513,6 @@
         </div>
       `;
       showOverlay();
-
-      const viewAll = overlay.querySelector("[data-emrn-viewall]");
-      if (viewAll) {
-        viewAll.addEventListener("click", () => {
-          saveRecentSearch(query);
-          window.location.href = `${config.searchResultsUrl}?q=${encodeURIComponent(query)}`;
-        });
-      }
     } catch (err) {
       console.error("[EMRN SmartSearch] API error", err);
       overlay.innerHTML = `<div class="emrn-smartsearch-empty">SmartSearch could not load right now. Please try again.</div>`;
@@ -520,32 +554,6 @@
       activeInput = input;
       scheduleRender(true);
     }, true);
-
-    activeInput.addEventListener("keydown", (e) => {
-      if (e.key === "Escape") hideOverlay();
-
-      if (e.key === "Enter") {
-        const q = activeInput.value.trim();
-        if (q.length >= 2) {
-          e.preventDefault();
-          saveRecentSearch(q);
-          window.location.href = `${config.searchResultsUrl}?q=${encodeURIComponent(q)}`;
-        }
-      }
-    }, true);
-
-    const form = activeInput.closest("form");
-    if (form && !form.dataset.emrnSmartSearchFormAttached) {
-      form.dataset.emrnSmartSearchFormAttached = "1";
-      form.addEventListener("submit", (e) => {
-        const q = activeInput.value.trim();
-        if (q.length >= 2) {
-          e.preventDefault();
-          saveRecentSearch(q);
-          window.location.href = `${config.searchResultsUrl}?q=${encodeURIComponent(q)}`;
-        }
-      }, true);
-    }
   }
 
   function init() {
@@ -555,16 +563,59 @@
   }
 
   document.addEventListener("focusin", (e) => {
-    if (e.target && e.target.matches && SELECTORS.some((sel) => e.target.matches(sel))) {
+    if (isSearchInput(e.target)) {
       attach(e.target);
       scheduleRender(true);
     }
   }, true);
 
   document.addEventListener("input", (e) => {
-    if (e.target && e.target.matches && SELECTORS.some((sel) => e.target.matches(sel))) {
+    if (isSearchInput(e.target)) {
       attach(e.target);
       scheduleRender(true);
+    }
+  }, true);
+
+  document.addEventListener("keyup", (e) => {
+    if (isSearchInput(e.target)) {
+      attach(e.target);
+      scheduleRender(true);
+    }
+  }, true);
+
+  document.addEventListener("keydown", (e) => {
+    if (!isSearchInput(e.target)) return;
+
+    activeInput = e.target;
+
+    if (e.key === "Escape") {
+      hideOverlay();
+      return;
+    }
+
+    if (e.key === "Enter") {
+      const q = activeInput.value.trim();
+      if (q.length >= 2) {
+        e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+        goToResults(q);
+      }
+    }
+  }, true);
+
+  document.addEventListener("submit", (e) => {
+    const form = e.target;
+    const input = form?.querySelector?.(SELECTORS.join(","));
+    if (!input) return;
+
+    const q = input.value.trim();
+    if (q.length >= 2) {
+      e.preventDefault();
+      e.stopPropagation();
+      e.stopImmediatePropagation();
+      activeInput = input;
+      goToResults(q);
     }
   }, true);
 
