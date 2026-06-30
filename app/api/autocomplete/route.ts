@@ -67,12 +67,13 @@ export async function GET(req: NextRequest) {
   }
 
   const expandedQuery = expandSearchQuery(q);
+  const searchQ = expandedQuery.expansions.length ? expandedQuery.expansions.join(" ") : q;
 
   const results: any = await typesenseSearch
     .collections(COLLECTION_NAME)
     .documents()
     .search({
-      q: expandedQuery.expanded,
+      q: searchQ,
       query_by: "sku,all_skus,name,parent_name,brand,sold_by,categories,variant_label,option_text,search_text",
       query_by_weights: "30,24,16,12,8,7,6,5,5,3",
       filter_by: "is_visible:=true",

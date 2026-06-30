@@ -32,6 +32,7 @@ export async function GET(req: NextRequest) {
   const availability = searchParams.get("availability");
 
   const expandedQuery = expandSearchQuery(q);
+  const searchQ = expandedQuery.expansions.length ? expandedQuery.expansions.join(" ") : q;
   const filters: string[] = ["is_visible:=true"];
 
   if (brand) filters.push(`brand:=${JSON.stringify(brand)}`);
@@ -43,7 +44,7 @@ export async function GET(req: NextRequest) {
     .collections(COLLECTION_NAME)
     .documents()
     .search({
-      q: expandedQuery.expanded,
+      q: searchQ,
       query_by:
         "sku,all_skus,name,parent_name,brand,sold_by,categories,variant_label,option_text,search_text,description,custom_fields_text",
       query_by_weights: "30,24,16,12,8,7,7,6,6,4,2,2",

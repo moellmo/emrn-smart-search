@@ -18,7 +18,7 @@ export function normalizeSearchText(value: string) {
 }
 
 const synonymPairs: Array<[string, string[]]> = [
-  ["gants", ["gloves", "exam gloves", "nitrile gloves", "surgical gloves"]],
+  ["gants", ["gloves", "medical gloves", "exam gloves", "nitrile gloves", "surgical gloves"]],
   ["gant", ["glove", "gloves"]],
   ["masques", ["masks", "face masks", "respirators"]],
   ["masque", ["mask", "masks", "face mask"]],
