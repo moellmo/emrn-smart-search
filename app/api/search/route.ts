@@ -32,7 +32,7 @@ export async function GET(req: NextRequest) {
   const availability = searchParams.get("availability");
 
   const expandedQuery = expandSearchQuery(q);
-  const searchQ = expandedQuery.expansions.length ? expandedQuery.expansions.join(" ") : q;
+  const searchQ = expandedQuery.expansions.length ? expandedQuery.expansions[0] : q;
   const filters: string[] = ["is_visible:=true"];
 
   if (brand) filters.push(`brand:=${JSON.stringify(brand)}`);
