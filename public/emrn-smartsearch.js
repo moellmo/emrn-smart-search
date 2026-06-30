@@ -19,7 +19,7 @@
 
   if (!config.enabled && !isTestMode && !isResultsPage) return;
 
-  console.log("[EMRN SmartSearch] pagination category highlight loaded");
+  console.log("[EMRN SmartSearch] relevant category tree loaded");
 
   const SELECTORS = ["#search_query_adv", 'input[name="search_query_adv"]', 'input[name="search_query"]', 'input[type="search"]', 'input[placeholder*="Search"]'];
   const LANG = (document.documentElement.lang || "").toLowerCase().startsWith("fr") || /\/fr(\/|$)/i.test(window.location.pathname) ? "fr" : "en";
@@ -116,7 +116,7 @@
     .emrn-smart-cat-row{display:flex;align-items:center;gap:6px;border:1px solid #e5e7eb;background:#fff;border-radius:11px;min-height:36px;padding:6px 7px}
     .emrn-smart-cat-row.active{border-color:#c34d50;background:#fff8f8;color:#c34d50}
     .emrn-smart-cat-toggle{border:0;background:#f3f4f6;border-radius:7px;width:24px;height:24px;cursor:pointer;font-weight:900}
-    .emrn-smart-cat-link{border:0;background:transparent;flex:1;text-align:left;font-weight:800;font-size:13px;cursor:pointer;color:inherit;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .emrn-smart-cat-link{border:0;background:transparent;flex:1;text-align:left;font-weight:800;font-size:13px;cursor:pointer;color:inherit;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.emrn-smart-cat-count{background:#f3f4f6;color:#555;border-radius:999px;padding:4px 7px;font-size:11px;font-weight:900}
     .emrn-smart-cat-children{display:none;margin-left:18px;gap:5px;flex-direction:column}
     .emrn-smart-cat-children.open{display:flex}
     .emrn-smart-results-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;gap:12px}
@@ -184,9 +184,73 @@
   function goToCategoryId(id){const q=new URLSearchParams(window.location.search).get("search_query")||"*";const url=new URL(config.searchResultsUrl,window.location.origin);url.searchParams.set("search_query",q);url.searchParams.set(config.resultsParam,"1");url.searchParams.set("category_id",id);window.location.href=url.toString()}
 
   async function loadCategoryTree(){if(categoryTreeCache)return categoryTreeCache;try{const res=await fetch(`${config.apiBase}/api/category-tree`,{mode:"cors"});const data=await res.json();const cats=data.categories||[];const byParent=new Map();cats.forEach(cat=>{const parent=Number(cat.parent_id||0);if(!byParent.has(parent))byParent.set(parent,[]);byParent.get(parent).push(cat)});categoryTreeCache={cats,byParent};return categoryTreeCache}catch(err){console.error("[EMRN SmartSearch] category tree error",err);return {cats:[],byParent:new Map()}}}
-  function renderCategoryBranch(parentId,level=0,selectedId=0,selectedName=""){if(!categoryTreeCache)return"";const children=(categoryTreeCache.byParent.get(Number(parentId))||[]).sort((a,b)=>a.name.localeCompare(b.name));return children.map(cat=>{const hasChildren=(categoryTreeCache.byParent.get(Number(cat.id))||[]).length>0;const isActive=Number(selectedId)===Number(cat.id)||(selectedName&&String(cat.name).toLowerCase()===String(selectedName).toLowerCase());return `<div class="emrn-smart-cat-node" data-cat-node="${cat.id}" style="margin-left:${level?10:0}px"><div class="emrn-smart-cat-row ${isActive?"active":""}">${hasChildren?`<button type="button" class="emrn-smart-cat-toggle" data-cat-toggle="${cat.id}">+</button>`:`<span style="width:24px"></span>`}<button type="button" class="emrn-smart-cat-link" data-category-id="${cat.id}" title="${escapeHtml(cat.name)}">${escapeHtml(cat.name)}</button></div>${hasChildren?`<div class="emrn-smart-cat-children" data-cat-children="${cat.id}">${renderCategoryBranch(cat.id,level+1,selectedId,selectedName)}</div>`:""}</div>`}).join("")}
-  function renderCategoryTree(selectedId,selectedName=""){return `<div class="emrn-smart-filter-group"><h3>${t("categories")}</h3><div class="emrn-smart-category-tree">${renderCategoryBranch(0,0,selectedId,selectedName)}</div></div>`}
-  function expandActiveCategoryTree(){document.querySelectorAll(".emrn-smart-cat-row.active").forEach(row=>{let parent=row.closest(".emrn-smart-cat-children");while(parent){parent.classList.add("open");const id=parent.getAttribute("data-cat-children");const toggle=document.querySelector(`[data-cat-toggle="${id}"]`);if(toggle)toggle.textContent="−";parent=parent.parentElement?.closest(".emrn-smart-cat-children")}})}
+  function buildRelevantCategoryHelpers(categoryFacetCounts=[],selectedId=0,selectedName=""){
+    const countByName=new Map((categoryFacetCounts||[]).map(item=>[String(item.value||"").toLowerCase(),Number(item.count||0)]));
+    const visibleIds=new Set();
+    const hasOwnCount=(cat)=>countByName.has(String(cat.name||"").toLowerCase());
+
+    function markAncestors(cat){
+      if(!cat||visibleIds.has(Number(cat.id)))return;
+      visibleIds.add(Number(cat.id));
+      const parentId=Number(cat.parent_id||0);
+      if(parentId){
+        const parent=(categoryTreeCache?.cats||[]).find(item=>Number(item.id)===parentId);
+        if(parent)markAncestors(parent);
+      }
+    }
+
+    function markDescendantsWithResults(cat){
+      const children=categoryTreeCache?.byParent.get(Number(cat.id))||[];
+      let childHasResults=false;
+      children.forEach(child=>{
+        if(markDescendantsWithResults(child)) childHasResults=true;
+      });
+      const activeById=Number(selectedId)===Number(cat.id);
+      const activeByName=selectedName&&String(cat.name).toLowerCase()===String(selectedName).toLowerCase();
+      const include=hasOwnCount(cat)||childHasResults||activeById||activeByName;
+      if(include)markAncestors(cat);
+      if(include)visibleIds.add(Number(cat.id));
+      return include;
+    }
+
+    (categoryTreeCache?.cats||[]).forEach(cat=>markDescendantsWithResults(cat));
+
+    return {visibleIds,countByName};
+  }
+
+  function renderCategoryBranch(parentId,level=0,selectedId=0,selectedName="",helpers={visibleIds:new Set(),countByName:new Map()}){
+    if(!categoryTreeCache)return"";
+    const children=(categoryTreeCache.byParent.get(Number(parentId))||[])
+      .filter(cat=>helpers.visibleIds.has(Number(cat.id)))
+      .sort((a,b)=>a.name.localeCompare(b.name));
+
+    return children.map(cat=>{
+      const hasChildren=(categoryTreeCache.byParent.get(Number(cat.id))||[]).some(child=>helpers.visibleIds.has(Number(child.id)));
+      const isActive=Number(selectedId)===Number(cat.id)||(selectedName&&String(cat.name).toLowerCase()===String(selectedName).toLowerCase());
+      const count=helpers.countByName.get(String(cat.name||"").toLowerCase())||0;
+      return `<div class="emrn-smart-cat-node" data-cat-node="${cat.id}" style="margin-left:${level?10:0}px"><div class="emrn-smart-cat-row ${isActive?"active":""}">${hasChildren?`<button type="button" class="emrn-smart-cat-toggle" data-cat-toggle="${cat.id}">+</button>`:`<span style="width:24px"></span>`}<button type="button" class="emrn-smart-cat-link" data-category-id="${cat.id}" title="${escapeHtml(cat.name)}">${escapeHtml(cat.name)}</button>${count?`<span class="emrn-smart-cat-count">${count}</span>`:""}</div>${hasChildren?`<div class="emrn-smart-cat-children" data-cat-children="${cat.id}">${renderCategoryBranch(cat.id,level+1,selectedId,selectedName,helpers)}</div>`:""}</div>`
+    }).join("")
+  }
+
+  function renderCategoryTree(selectedId,selectedName="",categoryFacetCounts=[]){
+    const helpers=buildRelevantCategoryHelpers(categoryFacetCounts,selectedId,selectedName);
+    const tree=renderCategoryBranch(0,0,selectedId,selectedName,helpers);
+    if(!tree)return "";
+    return `<div class="emrn-smart-filter-group"><h3>${t("categories")}</h3><div class="emrn-smart-category-tree">${tree}</div></div>`;
+  }
+
+  function expandActiveCategoryTree(){
+    document.querySelectorAll(".emrn-smart-cat-row.active").forEach(row=>{
+      let parent=row.closest(".emrn-smart-cat-children");
+      while(parent){
+        parent.classList.add("open");
+        const id=parent.getAttribute("data-cat-children");
+        const toggle=document.querySelector(`[data-cat-toggle="${id}"]`);
+        if(toggle)toggle.textContent="−";
+        parent=parent.parentElement?.closest(".emrn-smart-cat-children")
+      }
+    })
+  }
 
   async function addToCart(product,qty,button){button.disabled=true;const original=button.textContent;button.textContent=t("adding");try{const quantity=Math.max(1,Number(qty||1));const cartsRes=await fetch("/api/storefront/carts",{credentials:"include"});const carts=await cartsRes.json();const existingCart=Array.isArray(carts)&&carts.length?carts[0]:null;const endpoint=existingCart?.id?`/api/storefront/carts/${existingCart.id}/items`:"/api/storefront/carts";const lineItem={quantity,productId:Number(product.product_id)};if(Number(product.variant_id)>0)lineItem.variantId=Number(product.variant_id);const res=await fetch(endpoint,{method:"POST",credentials:"include",headers:{"Content-Type":"application/json"},body:JSON.stringify({lineItems:[lineItem]})});if(!res.ok)throw new Error(await res.text());button.textContent=t("added")}catch(err){console.error("[EMRN SmartSearch] add to cart failed",err);button.textContent=t("viewProduct");button.dataset.fallback="1"}finally{setTimeout(()=>{button.disabled=false;if(button.textContent===t("added"))button.textContent=original},1800)}}
   function productCard(product){const url=normalizeUrl(product.url);const price=Number(product.price||0);const img=product.image?`<img src="${escapeHtml(product.image)}" alt="${escapeHtml(product.name)}">`:`<span>No image</span>`;const option=smartOptionText(product.option_text);return `<article class="emrn-smart-product-card" data-product='${escapeHtml(JSON.stringify({product_id:product.product_id,variant_id:product.variant_id||0,url}))}'><a class="emrn-smart-product-img" href="${escapeHtml(url)}">${img}</a><div class="emrn-smart-product-body"><div class="emrn-smart-stars">★ ★ ★ ★ ★</div><a class="emrn-smart-product-name" href="${escapeHtml(url)}">${escapeHtml(product.parent_name||product.name)}</a>${option?`<div class="emrn-smart-variant" title="${escapeHtml(product.option_text)}">${escapeHtml(option)}</div>`:"<div class='emrn-smart-variant'></div>"}<div class="emrn-smart-meta">${product.brand?`<span>${escapeHtml(product.brand)}</span>`:""}${product.sold_by?`<span>${escapeHtml(product.sold_by)}</span>`:""}${product.sku?`<span>SKU: ${escapeHtml(product.sku)}</span>`:""}</div><div class="emrn-smart-price">${price>0?`$${price.toFixed(2)}`:"See product"}</div><div class="emrn-smart-card-actions"><div class="emrn-smart-qty"><button type="button" data-qty-minus>−</button><span data-qty>1</span><button type="button" data-qty-plus>+</button></div><button type="button" class="emrn-smart-cart-btn" data-add-cart>${t("addToCart")}</button><a class="emrn-smart-view-btn" href="${escapeHtml(url)}">${t("viewProduct")}</a><button type="button" class="emrn-smart-quote-btn" data-quote>${t("addToQuote")}</button></div></div></article>`}
@@ -234,8 +298,8 @@
       const data=await fetchSearchPage(1);
       const products=(data.hits||[]).map((hit)=>hit.document);
       const found=Number(data.found||products.length||0);
-      const brandFacet=(data.facet_counts||[]).find((facet)=>facet.field_name==="brand")?.counts||[];
-      shell.innerHTML=`<div class="emrn-smart-results-header"><div class="eyebrow">EMRN SmartSearch</div><h1>${t("resultsFor")} “${escapeHtml(q)}”</h1><p>${found||products.length} ${t("skuLevelShown")}${brand?` • ${escapeHtml(brand)}`:""}${category?` • ${escapeHtml(category)}`:""}</p><div class="emrn-smart-results-search"><input value="${escapeHtml(q)}" placeholder="${t("searchPlaceholder")}" data-smart-results-input><button type="button" data-smart-results-search>${t("searchButton")}</button></div></div><div class="emrn-smart-results-shell"><aside class="emrn-smart-results-filters"><div class="emrn-smart-filter-title">${t("refineBy")}</div><div class="emrn-smart-filter-note">${brand||category||categoryId?t("filtersApplied"):t("chooseBrandCategory")}</div>${brand||category||categoryId?`<button type="button" class="emrn-smart-viewall" data-clear-filters>${t("clearFilters")}</button>`:""}${facetGroup(t("brands"),brandFacet,"brand")}${renderCategoryTree(categoryId,category)}</aside><div class="emrn-smart-results-main"><div class="emrn-smart-results-top"><div><h2>${t("products")}</h2><p><span data-results-count>${products.length}</span> / ${found||products.length} ${t("skuLevelShown")}</p></div></div>${products.length?`<div class="emrn-smart-products-grid" data-products-grid>${products.map(productCard).join("")}</div>${renderLoadMore(found,products.length,1)}`:noResultsBox(data,q)}</div></div>`;
+      const brandFacet=(data.facet_counts||[]).find((facet)=>facet.field_name==="brand")?.counts||[];const categoryFacet=(data.facet_counts||[]).find((facet)=>facet.field_name==="categories")?.counts||[];
+      shell.innerHTML=`<div class="emrn-smart-results-header"><div class="eyebrow">EMRN SmartSearch</div><h1>${t("resultsFor")} “${escapeHtml(q)}”</h1><p>${found||products.length} ${t("skuLevelShown")}${brand?` • ${escapeHtml(brand)}`:""}${category?` • ${escapeHtml(category)}`:""}</p><div class="emrn-smart-results-search"><input value="${escapeHtml(q)}" placeholder="${t("searchPlaceholder")}" data-smart-results-input><button type="button" data-smart-results-search>${t("searchButton")}</button></div></div><div class="emrn-smart-results-shell"><aside class="emrn-smart-results-filters"><div class="emrn-smart-filter-title">${t("refineBy")}</div><div class="emrn-smart-filter-note">${brand||category||categoryId?t("filtersApplied"):t("chooseBrandCategory")}</div>${brand||category||categoryId?`<button type="button" class="emrn-smart-viewall" data-clear-filters>${t("clearFilters")}</button>`:""}${facetGroup(t("brands"),brandFacet,"brand")}${renderCategoryTree(categoryId,category,categoryFacet)}</aside><div class="emrn-smart-results-main"><div class="emrn-smart-results-top"><div><h2>${t("products")}</h2><p><span data-results-count>${products.length}</span> / ${found||products.length} ${t("skuLevelShown")}</p></div></div>${products.length?`<div class="emrn-smart-products-grid" data-products-grid>${products.map(productCard).join("")}</div>${renderLoadMore(found,products.length,1)}`:noResultsBox(data,q)}</div></div>`;
       expandActiveCategoryTree();
     }catch(err){
       console.error("[EMRN SmartSearch] results page error",err);
