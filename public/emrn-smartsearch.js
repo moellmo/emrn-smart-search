@@ -12,7 +12,6 @@
   };
 
   const isTestMode = new URLSearchParams(window.location.search).get(config.testParam) === "1";
-
   if (!config.enabled && !isTestMode) return;
 
   const POPULAR_SEARCHES = [
@@ -36,24 +35,16 @@
 
   const style = document.createElement("style");
   style.textContent = `
-    .emrn-smartsearch-host {
-      position: relative !important;
-      z-index: 999999 !important;
-    }
-
     .emrn-smartsearch-overlay {
-      position: absolute;
-      left: 0;
-      right: 0;
-      top: calc(100% + 10px);
+      position: fixed !important;
       width: min(760px, calc(100vw - 24px));
       max-width: 760px;
       background: #fff;
       border: 1px solid #ead7d8;
       border-radius: 22px;
       overflow: hidden;
-      box-shadow: 0 24px 60px rgba(20,30,55,.22);
-      z-index: 99999999;
+      box-shadow: 0 24px 60px rgba(20,30,55,.24);
+      z-index: 2147483647 !important;
       font-family: Arial, sans-serif;
       color: #1f2937;
     }
@@ -68,11 +59,15 @@
       border-right: 1px solid #eee;
       background: #fff;
       min-height: 280px;
+      max-height: 520px;
+      overflow: auto;
     }
 
     .emrn-smartsearch-side {
       padding: 18px;
       background: #fff8f8;
+      max-height: 520px;
+      overflow: auto;
     }
 
     .emrn-smartsearch-title {
@@ -261,12 +256,11 @@
 
     @media (max-width: 760px) {
       .emrn-smartsearch-overlay {
-        position: fixed;
-        left: 10px;
-        right: 10px;
-        top: 92px;
-        width: auto;
-        max-height: calc(100vh - 110px);
+        left: 10px !important;
+        right: 10px !important;
+        top: 84px !important;
+        width: auto !important;
+        max-height: calc(100vh - 100px);
         overflow: auto;
       }
 
@@ -328,7 +322,7 @@
       .replaceAll("'", "&#039;");
   }
 
-  function sideCard(title, items, onClickPrefix = "") {
+  function sideCard(title, items) {
     if (!items || !items.length) return "";
 
     return `
@@ -368,14 +362,30 @@
     `;
   }
 
+  function positionOverlay(input, overlay) {
+    const rect = input.getBoundingClientRect();
+    const viewportWidth = window.innerWidth || document.documentElement.clientWidth;
+    const desiredWidth = Math.min(760, viewportWidth - 24);
+    let left = rect.left;
+
+    if (left + desiredWidth > viewportWidth - 12) {
+      left = viewportWidth - desiredWidth - 12;
+    }
+    if (left < 12) left = 12;
+
+    overlay.style.width = `${desiredWidth}px`;
+    overlay.style.left = `${left}px`;
+    overlay.style.top = `${rect.bottom + 10}px`;
+  }
+
   function createOverlay(input) {
-    const host = input.closest("form") || input.parentElement;
-    host.classList.add("emrn-smartsearch-host");
+    const old = document.querySelector(".emrn-smartsearch-overlay");
+    if (old) old.remove();
 
     const overlay = document.createElement("div");
     overlay.className = "emrn-smartsearch-overlay";
     overlay.hidden = true;
-    host.appendChild(overlay);
+    document.body.appendChild(overlay);
 
     overlay.addEventListener("mousedown", (e) => {
       e.preventDefault();
@@ -391,10 +401,29 @@
       }
     });
 
+    window.addEventListener("resize", () => {
+      if (!overlay.hidden) positionOverlay(input, overlay);
+    });
+
+    window.addEventListener("scroll", () => {
+      if (!overlay.hidden) positionOverlay(input, overlay);
+    }, true);
+
     return overlay;
   }
 
-  function renderStarter(overlay) {
+  function showOverlay(input, overlay) {
+    positionOverlay(input, overlay);
+    overlay.hidden = false;
+    document.body.classList.add("emrn-smartsearch-active");
+  }
+
+  function hideOverlay(overlay) {
+    overlay.hidden = true;
+    document.body.classList.remove("emrn-smartsearch-active");
+  }
+
+  function renderStarter(input, overlay) {
     const recent = getRecentSearches();
 
     overlay.innerHTML = `
@@ -418,18 +447,15 @@
         </div>
       </div>
     `;
-    overlay.hidden = false;
+    showOverlay(input, overlay);
   }
 
   async function renderResults(input, overlay, query) {
     if (!query || query.trim().length < 2) {
-      renderStarter(overlay);
+      renderStarter(input, overlay);
       return;
     }
 
-    document.body.classList.add("emrn-smartsearch-active");
-
-    overlay.hidden = false;
     overlay.innerHTML = `
       <div class="emrn-smartsearch-grid">
         <div class="emrn-smartsearch-products">
@@ -444,6 +470,7 @@
         </div>
       </div>
     `;
+    showOverlay(input, overlay);
 
     try {
       const res = await fetch(`${config.apiBase}/api/autocomplete?q=${encodeURIComponent(query)}`, {
@@ -481,6 +508,7 @@
           </div>
         </div>
       `;
+      showOverlay(input, overlay);
 
       const viewAll = overlay.querySelector("[data-emrn-viewall]");
       if (viewAll) {
@@ -495,6 +523,7 @@
           SmartSearch could not load right now. Please try again.
         </div>
       `;
+      showOverlay(input, overlay);
     }
   }
 
@@ -508,18 +537,19 @@
     const run = debounce(() => renderResults(input, overlay, input.value.trim()), 160);
 
     input.addEventListener("input", run);
+    input.addEventListener("keyup", run);
+
     input.addEventListener("focus", () => {
       if (input.value.trim().length >= 2) {
         renderResults(input, overlay, input.value.trim());
       } else {
-        renderStarter(overlay);
+        renderStarter(input, overlay);
       }
     });
 
     input.addEventListener("keydown", (e) => {
       if (e.key === "Escape") {
-        overlay.hidden = true;
-        document.body.classList.remove("emrn-smartsearch-active");
+        hideOverlay(overlay);
       }
 
       if (e.key === "Enter") {
@@ -546,17 +576,14 @@
 
     document.addEventListener("click", (e) => {
       if (!overlay.contains(e.target) && e.target !== input) {
-        overlay.hidden = true;
-        document.body.classList.remove("emrn-smartsearch-active");
+        hideOverlay(overlay);
       }
     });
   }
 
   function init() {
     const input = SELECTORS.map((sel) => document.querySelector(sel)).find(Boolean);
-
     if (!input) return;
-
     attach(input);
   }
 
