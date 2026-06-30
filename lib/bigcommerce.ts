@@ -3,6 +3,7 @@ import { stripHtml, normalizeSku, uniq } from "./clean";
 const STORE_HASH = process.env.BIGCOMMERCE_STORE_HASH!;
 const ACCESS_TOKEN = process.env.BIGCOMMERCE_ACCESS_TOKEN!;
 const API_BASE = `https://api.bigcommerce.com/stores/${STORE_HASH}/v3`;
+const STORE_URL = process.env.EMRN_STORE_URL || "https://emrn.ca";
 
 type BigCommerceListResponse<T> = {
   data: T[];
@@ -199,7 +200,9 @@ export async function getAllProductsForSearch() {
         sale_price: Number(product.sale_price || 0),
         retail_price: Number(product.retail_price || 0),
         image: thumbnail,
-        url: product.custom_url?.url || `/products/${product.id}`,
+        url: product.custom_url?.url
+  ? `${STORE_URL}${product.custom_url.url.startsWith("/") ? "" : "/"}${product.custom_url.url}`
+  : `${STORE_URL}/products/${product.id}`,
         inventory_level: Number(product.inventory_level || 0),
         availability: product.availability || "",
         availability_description: product.availability_description || "",

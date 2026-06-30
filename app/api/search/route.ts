@@ -2,6 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { typesenseSearch } from "../../../lib/typesense";
 
 const COLLECTION_NAME = "emrn_products";
+const STORE_URL = process.env.EMRN_STORE_URL || "https://emrn.ca";
+
+function fixUrl(url: string | undefined) {
+  if (!url) return STORE_URL;
+  if (url.startsWith("http://") || url.startsWith("https://")) return url;
+  return `${STORE_URL}${url.startsWith("/") ? "" : "/"}${url}`;
+}
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
@@ -18,7 +25,7 @@ export async function GET(req: NextRequest) {
   if (category) filters.push(`categories:=${JSON.stringify(category)}`);
   if (availability) filters.push(`availability:=${JSON.stringify(availability)}`);
 
-  const results = await typesenseSearch
+  const results: any = await typesenseSearch
     .collections(COLLECTION_NAME)
     .documents()
     .search({
@@ -34,6 +41,16 @@ export async function GET(req: NextRequest) {
       typo_tokens_threshold: 1,
       prefix: true
     });
+
+  if (results.hits) {
+    results.hits = results.hits.map((hit: any) => ({
+      ...hit,
+      document: {
+        ...hit.document,
+        url: fixUrl(hit.document?.url)
+      }
+    }));
+  }
 
   return NextResponse.json(results);
 }

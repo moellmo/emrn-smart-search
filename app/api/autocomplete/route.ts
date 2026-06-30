@@ -2,6 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { typesenseSearch } from "../../../lib/typesense";
 
 const COLLECTION_NAME = "emrn_products";
+const STORE_URL = process.env.EMRN_STORE_URL || "https://emrn.ca";
+
+function fixUrl(url: string | undefined) {
+  if (!url) return STORE_URL;
+  if (url.startsWith("http://") || url.startsWith("https://")) return url;
+  return `${STORE_URL}${url.startsWith("/") ? "" : "/"}${url}`;
+}
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
@@ -39,7 +46,7 @@ export async function GET(req: NextRequest) {
         price: doc.price,
         sale_price: doc.sale_price,
         image: doc.image,
-        url: doc.url,
+        url: fixUrl(doc.url),
         availability: doc.availability,
         availability_description: doc.availability_description
       };
