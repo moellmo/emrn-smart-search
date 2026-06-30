@@ -16,6 +16,27 @@ function fixUrl(url: string | undefined) {
   return `${STORE_URL}${url.startsWith("/") ? "" : "/"}${url}`;
 }
 
+function normalizeHit(doc: any) {
+  return {
+    id: doc.id,
+    product_id: doc.product_id,
+    variant_id: doc.variant_id || 0,
+    is_variant: Boolean(doc.is_variant),
+    parent_name: doc.parent_name || "",
+    name: doc.name,
+    sku: doc.sku,
+    brand: doc.brand,
+    price: doc.price,
+    sale_price: doc.sale_price,
+    image: doc.image,
+    url: fixUrl(doc.url),
+    option_text: doc.option_text || "",
+    variant_label: doc.variant_label || "",
+    availability: doc.availability,
+    availability_description: doc.availability_description
+  };
+}
+
 export async function OPTIONS() {
   return new NextResponse(null, {
     status: 204,
@@ -36,39 +57,23 @@ export async function GET(req: NextRequest) {
     .documents()
     .search({
       q,
-      query_by: "sku,all_skus,name,brand,categories,search_text",
-      query_by_weights: "25,20,12,8,6,3",
+      query_by: "sku,all_skus,name,parent_name,brand,categories,variant_label,option_text,search_text",
+      query_by_weights: "30,24,16,12,8,6,5,5,3",
       filter_by: "is_visible:=true",
       facet_by: "brand,categories",
       per_page: 8,
       num_typos: 2,
       typo_tokens_threshold: 1,
       prefix: true,
-      highlight_full_fields: "name,sku,brand,categories"
+      highlight_full_fields: "name,sku,brand,categories,variant_label,option_text"
     });
 
-  const products =
-    results.hits?.map((hit: any) => {
-      const doc = hit.document;
-      return {
-        id: doc.id,
-        product_id: doc.product_id,
-        name: doc.name,
-        sku: doc.sku,
-        brand: doc.brand,
-        price: doc.price,
-        sale_price: doc.sale_price,
-        image: doc.image,
-        url: fixUrl(doc.url),
-        availability: doc.availability,
-        availability_description: doc.availability_description
-      };
-    }) || [];
+  const products = results.hits?.map((hit: any) => normalizeHit(hit.document)) || [];
 
   const facets =
     results.facet_counts?.map((facet: any) => ({
       field: facet.field_name,
-      values: facet.counts?.slice(0, 5) || []
+      values: facet.counts?.slice(0, 7) || []
     })) || [];
 
   return NextResponse.json({ products, facets }, { headers: corsHeaders });

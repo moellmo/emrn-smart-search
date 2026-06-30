@@ -43,8 +43,8 @@ export async function GET(req: NextRequest) {
     .documents()
     .search({
       q,
-      query_by: "sku,all_skus,name,brand,categories,search_text,description,custom_fields_text,option_text",
-      query_by_weights: "20,18,12,8,7,4,2,2,2",
+      query_by: "sku,all_skus,name,parent_name,brand,categories,variant_label,option_text,search_text,description,custom_fields_text",
+      query_by_weights: "30,24,16,12,8,7,6,6,4,2,2",
       filter_by: filters.join(" && "),
       facet_by: "brand,categories,availability",
       sort_by: "_text_match:desc,product_id:desc",
@@ -60,7 +60,9 @@ export async function GET(req: NextRequest) {
       ...hit,
       document: {
         ...hit.document,
-        url: fixUrl(hit.document?.url)
+        url: fixUrl(hit.document?.url),
+        variant_id: hit.document?.variant_id || 0,
+        is_variant: Boolean(hit.document?.is_variant)
       }
     }));
   }

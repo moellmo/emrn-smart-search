@@ -15,6 +15,9 @@ async function recreateCollection() {
     name: COLLECTION_NAME,
     fields: [
       { name: "product_id", type: "int32" },
+      { name: "variant_id", type: "int32", facet: true, optional: true },
+      { name: "is_variant", type: "bool", facet: true, optional: true },
+      { name: "parent_name", type: "string", optional: true },
       { name: "name", type: "string" },
       { name: "sku", type: "string", optional: true },
       { name: "variant_skus", type: "string[]", optional: true },
@@ -25,6 +28,7 @@ async function recreateCollection() {
       { name: "description", type: "string", optional: true },
       { name: "custom_fields_text", type: "string", optional: true },
       { name: "option_text", type: "string", optional: true },
+      { name: "variant_label", type: "string", optional: true },
       { name: "search_text", type: "string", optional: true },
       { name: "price", type: "float", facet: true },
       { name: "sale_price", type: "float", optional: true },
@@ -75,7 +79,7 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({
     ok: true,
     collection: COLLECTION_NAME,
-    total_products: products.length,
+    total_records: products.length,
     failed_count: failed.length,
     failed: failed.slice(0, 10),
     ms: Date.now() - startedAt

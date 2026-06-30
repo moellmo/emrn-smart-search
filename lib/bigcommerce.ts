@@ -46,7 +46,11 @@ type BCProduct = {
     price?: number;
     calculated_price?: number;
     sale_price?: number;
+    retail_price?: number;
     inventory_level?: number;
+    image_url?: string;
+    purchasing_disabled?: boolean;
+    is_purchasing_disabled?: boolean;
     option_values?: Array<{
       option_display_name?: string;
       label?: string;
@@ -109,6 +113,60 @@ async function fetchAllPages<T>(path: string): Promise<T[]> {
   return all;
 }
 
+function absoluteStoreUrl(path?: string) {
+  if (!path) return STORE_URL;
+  if (path.startsWith("http://") || path.startsWith("https://")) return path;
+  return `${STORE_URL}${path.startsWith("/") ? "" : "/"}${path}`;
+}
+
+function productImage(product: BCProduct) {
+  return (
+    product.images?.find((img) => img.is_thumbnail)?.url_standard ||
+    product.images?.[0]?.url_standard ||
+    product.images?.[0]?.url_thumbnail ||
+    ""
+  );
+}
+
+function variantOptionText(variant: NonNullable<BCProduct["variants"]>[number]) {
+  return (variant.option_values || [])
+    .map((option) =>
+      [option.option_display_name, option.label].filter(Boolean).join(": ")
+    )
+    .filter(Boolean)
+    .join(", ");
+}
+
+function variantLabel(variant: NonNullable<BCProduct["variants"]>[number]) {
+  return (variant.option_values || [])
+    .map((option) => option.label)
+    .filter(Boolean)
+    .join(" / ");
+}
+
+function docName(parentName: string, label: string) {
+  if (!label) return parentName;
+  if (parentName.toLowerCase().includes(label.toLowerCase())) return parentName;
+  return `${parentName} - ${label}`;
+}
+
+function productIsEnabled(product: BCProduct) {
+  // BigCommerce uses is_visible for storefront visibility.
+  // Availability can be "available", "disabled", or "preorder".
+  // We exclude disabled/unavailable products so they do not appear in SmartSearch.
+  if (product.is_visible === false) return false;
+  if (String(product.availability || "").toLowerCase() === "disabled") return false;
+  return true;
+}
+
+function variantIsEnabled(variant: NonNullable<BCProduct["variants"]>[number]) {
+  // BigCommerce variants can be disabled for purchase.
+  // Field name can differ by response/API version, so support both.
+  if (variant.purchasing_disabled === true) return false;
+  if (variant.is_purchasing_disabled === true) return false;
+  return true;
+}
+
 export async function getBrandsMap() {
   const brands = await fetchAllPages<BCBrand>("/catalog/brands");
   return new Map(brands.map((brand) => [brand.id, brand.name]));
@@ -128,65 +186,85 @@ export async function getAllProductsForSearch() {
     getCategoriesMap(),
   ]);
 
-  return products
-    .filter((product) => product.is_visible !== false)
-    .map((product) => {
-      const thumbnail =
-        product.images?.find((img) => img.is_thumbnail)?.url_standard ||
-        product.images?.[0]?.url_standard ||
-        product.images?.[0]?.url_thumbnail ||
-        "";
+  const documents: any[] = [];
 
-      const brand = product.brand_id
-        ? brandsMap.get(product.brand_id) || ""
-        : "";
+  for (const product of products.filter(productIsEnabled)) {
+    const baseImage = productImage(product);
 
-      const categories = (product.categories || [])
-        .map((id) => categoriesMap.get(id)?.name || "")
-        .filter(Boolean);
+    const brand = product.brand_id ? brandsMap.get(product.brand_id) || "" : "";
 
-      const categoryIds = product.categories || [];
+    const categories = (product.categories || [])
+      .map((id) => categoriesMap.get(id)?.name || "")
+      .filter(Boolean);
 
-      const variantSkus = uniq(
-        (product.variants || [])
-          .map((variant) => normalizeSku(variant.sku))
-          .filter(Boolean)
+    const categoryIds = product.categories || [];
+    const enabledVariants = (product.variants || []).filter(variantIsEnabled);
+
+    const variantSkus = uniq(
+      enabledVariants
+        .map((variant) => normalizeSku(variant.sku))
+        .filter(Boolean)
+    );
+
+    const allSkus = uniq([normalizeSku(product.sku), ...variantSkus]);
+
+    const customFieldText = (product.custom_fields || [])
+      .map((field) => `${field.name}: ${field.value}`)
+      .join(" ");
+
+    const description = stripHtml(product.description);
+    const productUrl = absoluteStoreUrl(product.custom_url?.url);
+
+    const createDoc = (
+      variant?: NonNullable<BCProduct["variants"]>[number],
+      fallbackIndex = 0
+    ) => {
+      const optionText = variant ? variantOptionText(variant) : "";
+      const label = variant ? variantLabel(variant) : "";
+      const sku = normalizeSku(variant?.sku || product.sku);
+      const variantId = variant?.id || 0;
+      const isVariant = Boolean(variantId);
+
+      const name = docName(product.name || "", label || optionText);
+
+      // Variant-level price first. This makes the displayed price match the exact SKU/variant.
+      const price = Number(
+        variant?.calculated_price ??
+          variant?.price ??
+          product.calculated_price ??
+          product.price ??
+          0
       );
 
-      const allSkus = uniq([normalizeSku(product.sku), ...variantSkus]);
+      const salePrice = Number(variant?.sale_price ?? product.sale_price ?? 0);
+      const retailPrice = Number(variant?.retail_price ?? product.retail_price ?? 0);
 
-      const customFieldText = (product.custom_fields || [])
-        .map((field) => `${field.name}: ${field.value}`)
-        .join(" ");
-
-      const optionText = (product.variants || [])
-        .flatMap((variant) => variant.option_values || [])
-        .map((option) =>
-          [option.option_display_name, option.label].filter(Boolean).join(": ")
-        )
-        .join(" ");
-
-      const description = stripHtml(product.description);
+      const image = variant?.image_url || baseImage;
 
       const searchText = [
+        name,
         product.name,
+        sku,
         product.sku,
-        ...variantSkus,
+        ...allSkus,
         brand,
         ...categories,
+        optionText,
+        label,
         description,
         customFieldText,
-        optionText,
-        product.availability_description,
       ]
         .filter(Boolean)
         .join(" ");
 
       return {
-        id: String(product.id),
+        id: variantId ? `${product.id}-${variantId}` : `${product.id}-${fallbackIndex}`,
         product_id: product.id,
-        name: product.name || "",
-        sku: normalizeSku(product.sku),
+        variant_id: variantId,
+        is_variant: isVariant,
+        parent_name: product.name || "",
+        name,
+        sku,
         variant_skus: variantSkus,
         all_skus: allSkus,
         brand,
@@ -195,19 +273,29 @@ export async function getAllProductsForSearch() {
         description,
         custom_fields_text: customFieldText,
         option_text: optionText,
+        variant_label: label,
         search_text: searchText,
-        price: Number(product.calculated_price || product.price || 0),
-        sale_price: Number(product.sale_price || 0),
-        retail_price: Number(product.retail_price || 0),
-        image: thumbnail,
-        url: product.custom_url?.url
-  ? `${STORE_URL}${product.custom_url.url.startsWith("/") ? "" : "/"}${product.custom_url.url}`
-  : `${STORE_URL}/products/${product.id}`,
-        inventory_level: Number(product.inventory_level || 0),
+        price,
+        sale_price: salePrice,
+        retail_price: retailPrice,
+        image,
+        url: productUrl,
+        inventory_level: Number(variant?.inventory_level ?? product.inventory_level ?? 0),
         availability: product.availability || "",
         availability_description: product.availability_description || "",
-        is_visible: product.is_visible !== false,
+        is_visible: true,
         date_modified: product.date_modified || "",
       };
-    });
+    };
+
+    if (enabledVariants.length) {
+      enabledVariants.forEach((variant, index) => {
+        documents.push(createDoc(variant, index));
+      });
+    } else {
+      documents.push(createDoc(undefined, 0));
+    }
+  }
+
+  return documents;
 }
