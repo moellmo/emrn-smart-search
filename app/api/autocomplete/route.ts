@@ -4,10 +4,23 @@ import { typesenseSearch } from "../../../lib/typesense";
 const COLLECTION_NAME = "emrn_products";
 const STORE_URL = process.env.EMRN_STORE_URL || "https://emrn.ca";
 
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type",
+};
+
 function fixUrl(url: string | undefined) {
   if (!url) return STORE_URL;
   if (url.startsWith("http://") || url.startsWith("https://")) return url;
   return `${STORE_URL}${url.startsWith("/") ? "" : "/"}${url}`;
+}
+
+export async function OPTIONS() {
+  return new NextResponse(null, {
+    status: 204,
+    headers: corsHeaders,
+  });
 }
 
 export async function GET(req: NextRequest) {
@@ -15,7 +28,7 @@ export async function GET(req: NextRequest) {
   const q = searchParams.get("q") || "";
 
   if (q.trim().length < 2) {
-    return NextResponse.json({ products: [], facets: [] });
+    return NextResponse.json({ products: [], facets: [] }, { headers: corsHeaders });
   }
 
   const results = await typesenseSearch
@@ -58,5 +71,5 @@ export async function GET(req: NextRequest) {
       values: facet.counts?.slice(0, 5) || []
     })) || [];
 
-  return NextResponse.json({ products, facets });
+  return NextResponse.json({ products, facets }, { headers: corsHeaders });
 }
