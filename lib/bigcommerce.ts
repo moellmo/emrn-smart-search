@@ -151,20 +151,24 @@ function docName(parentName: string, label: string) {
 }
 
 function productIsEnabled(product: BCProduct) {
-  // BigCommerce uses is_visible for storefront visibility.
-  // Availability can be "available", "disabled", or "preorder".
-  // We exclude disabled/unavailable products so they do not appear in SmartSearch.
   if (product.is_visible === false) return false;
   if (String(product.availability || "").toLowerCase() === "disabled") return false;
   return true;
 }
 
 function variantIsEnabled(variant: NonNullable<BCProduct["variants"]>[number]) {
-  // BigCommerce variants can be disabled for purchase.
-  // Field name can differ by response/API version, so support both.
   if (variant.purchasing_disabled === true) return false;
   if (variant.is_purchasing_disabled === true) return false;
   return true;
+}
+
+function getCustomField(product: BCProduct, wantedName: string) {
+  const wanted = wantedName.trim().toLowerCase();
+  return (
+    product.custom_fields?.find(
+      (field) => String(field.name || "").trim().toLowerCase() === wanted
+    )?.value || ""
+  );
 }
 
 export async function getBrandsMap() {
@@ -190,6 +194,7 @@ export async function getAllProductsForSearch() {
 
   for (const product of products.filter(productIsEnabled)) {
     const baseImage = productImage(product);
+    const soldBy = getCustomField(product, "Sold By");
 
     const brand = product.brand_id ? brandsMap.get(product.brand_id) || "" : "";
 
@@ -227,7 +232,6 @@ export async function getAllProductsForSearch() {
 
       const name = docName(product.name || "", label || optionText);
 
-      // Variant-level price first. This makes the displayed price match the exact SKU/variant.
       const price = Number(
         variant?.calculated_price ??
           variant?.price ??
@@ -248,6 +252,7 @@ export async function getAllProductsForSearch() {
         product.sku,
         ...allSkus,
         brand,
+        soldBy,
         ...categories,
         optionText,
         label,
@@ -268,6 +273,7 @@ export async function getAllProductsForSearch() {
         variant_skus: variantSkus,
         all_skus: allSkus,
         brand,
+        sold_by: soldBy,
         categories,
         category_ids: categoryIds,
         description,

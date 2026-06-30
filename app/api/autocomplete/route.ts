@@ -26,6 +26,7 @@ function normalizeHit(doc: any) {
     name: doc.name,
     sku: doc.sku,
     brand: doc.brand,
+    sold_by: doc.sold_by || "",
     price: doc.price,
     sale_price: doc.sale_price,
     image: doc.image,
@@ -57,15 +58,15 @@ export async function GET(req: NextRequest) {
     .documents()
     .search({
       q,
-      query_by: "sku,all_skus,name,parent_name,brand,categories,variant_label,option_text,search_text",
-      query_by_weights: "30,24,16,12,8,6,5,5,3",
+      query_by: "sku,all_skus,name,parent_name,brand,sold_by,categories,variant_label,option_text,search_text",
+      query_by_weights: "30,24,16,12,8,7,6,5,5,3",
       filter_by: "is_visible:=true",
       facet_by: "brand,categories",
       per_page: 8,
       num_typos: 2,
       typo_tokens_threshold: 1,
       prefix: true,
-      highlight_full_fields: "name,sku,brand,categories,variant_label,option_text"
+      highlight_full_fields: "name,sku,brand,sold_by,categories,variant_label,option_text"
     });
 
   const products = results.hits?.map((hit: any) => normalizeHit(hit.document)) || [];

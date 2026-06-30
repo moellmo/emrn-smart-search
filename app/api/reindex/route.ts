@@ -23,6 +23,7 @@ async function recreateCollection() {
       { name: "variant_skus", type: "string[]", optional: true },
       { name: "all_skus", type: "string[]", optional: true },
       { name: "brand", type: "string", facet: true, optional: true },
+      { name: "sold_by", type: "string", facet: true, optional: true },
       { name: "categories", type: "string[]", facet: true, optional: true },
       { name: "category_ids", type: "int32[]", facet: true, optional: true },
       { name: "description", type: "string", optional: true },
