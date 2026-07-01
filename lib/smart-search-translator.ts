@@ -1,4 +1,4 @@
-import { detectQueryLanguage, expandSearchQuery, getFallbackTerms } from "./search-language";
+import { detectQueryLanguage, expandSearchQuery, getFallbackTerms, normalizeSearchText } from "./search-language";
 import { findSearchRedirect, searchOverrides } from "./search-overrides";
 
 type SmartQueryResult = {
@@ -9,6 +9,7 @@ type SmartQueryResult = {
   expansions: string[];
   translated_query: string;
   translator: "none" | "manual" | "openai" | "manual+openai";
+  ai_status: "not_needed" | "missing_key" | "called" | "error";
   fallback_terms: string[];
   redirect_url?: string;
 };
@@ -27,31 +28,47 @@ globalCache.__emrnSmartSearchTranslatorCache = cache;
 
 const CACHE_TTL_MS = 1000 * 60 * 60 * 24 * 14;
 
+const modifierMap: Array<[RegExp, string]> = [
+  [/\\b(\\d+(?:\\.\\d+)?)\\s*ml\\b/i, "$1 ml"],
+  [/\\b(\\d+(?:\\.\\d+)?)\\s*cc\\b/i, "$1 cc"],
+  [/\\b(\\d+(?:\\.\\d+)?)\\s*fr\\b/i, "$1 fr"],
+  [/\\b(\\d+(?:\\.\\d+)?)\\s*g\\b/i, "$1 g"],
+  [/\\bpediatrique\\b/i, "pediatric"],
+  [/\\bpédiatrique\\b/i, "pediatric"],
+  [/\\badulte\\b/i, "adult"],
+  [/\\benfant\\b/i, "child pediatric"],
+  [/\\bbebe\\b/i, "infant baby"],
+  [/\\bbébé\\b/i, "infant baby"],
+  [/\\bsterile\\b/i, "sterile"],
+  [/\\bstérile\\b/i, "sterile"],
+  [/\\bjetable\\b/i, "disposable"],
+  [/\\bformation\\b/i, "training"],
+  [/\\bdouche\\b/i, "shower"],
+];
+
 function cleanSearchQuery(query: string) {
   return String(query || "")
-    .replace(/\s+/g, " ")
+    .replace(/\\s+/g, " ")
     .trim()
-    .slice(0, 140);
+    .slice(0, 160);
 }
 
 function extractOutputText(payload: any) {
   if (typeof payload?.output_text === "string") return payload.output_text;
-
   const parts: string[] = [];
   for (const item of payload?.output || []) {
     for (const content of item?.content || []) {
       if (typeof content?.text === "string") parts.push(content.text);
     }
   }
-
-  return parts.join("\n").trim();
+  return parts.join("\\n").trim();
 }
 
 function safeParseJson(text: string) {
   try {
     return JSON.parse(text);
   } catch {
-    const match = text.match(/\{[\s\S]*\}/);
+    const match = text.match(/\\{[\\s\\S]*\\}/);
     if (!match) return null;
     try {
       return JSON.parse(match[0]);
@@ -61,78 +78,95 @@ function safeParseJson(text: string) {
   }
 }
 
+function preserveModifiers(original: string) {
+  const pieces = new Set<string>();
+  const normalized = normalizeSearchText(original);
+
+  for (const [regex, replacement] of modifierMap) {
+    const match = original.match(regex) || normalized.match(regex);
+    if (match) {
+      const value = replacement.replace("$1", match[1] || "").trim();
+      if (value) pieces.add(value);
+    }
+  }
+
+  return Array.from(pieces).join(" ");
+}
+
+function buildManualQuery(original: string, expansions: string[]) {
+  if (!expansions.length) return "";
+  const primary = expansions[0];
+  const modifiers = preserveModifiers(original);
+  return cleanSearchQuery([primary, modifiers].filter(Boolean).join(" "));
+}
+
 async function translateWithOpenAI(query: string, language: "en" | "fr") {
   const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) return "";
+  if (!apiKey) return { query: "", status: "missing_key" as const };
 
-  const model = process.env.OPENAI_SEARCH_TRANSLATOR_MODEL || "gpt-5.5";
+  const model = process.env.OPENAI_SEARCH_TRANSLATOR_MODEL || "gpt-4.1-mini";
   const input = [
     {
       role: "system",
       content:
-        "You translate healthcare ecommerce search queries into concise English search keywords for a Canadian medical supply website. Return ONLY JSON with keys english_query and alternatives. Do not include explanations. Preserve brand names, SKU-like strings, model numbers, sizes, French medical intent, and product category meaning. Use common North American medical supply terms: manikin not mannequin, AED, CPR, blood pressure cuff, oxygen mask, wound dressing, syringe, catheter, gloves.",
+        "You translate healthcare ecommerce search queries into concise English search keywords for a Canadian medical supply website. Return ONLY JSON with keys english_query and alternatives. Preserve brand names, SKU-like strings, model numbers, sizes, quantities, and medical category meaning. Use common terms: manikin not mannequin, AED, CPR, blood pressure cuff, oxygen mask, wound dressing, syringe, catheter, gloves, shower chair.",
     },
     {
       role: "user",
-      content: `Query language: ${language}\nCustomer search query: ${query}\nReturn English search keywords that should match product names/SKUs/categories.`,
+      content: `Query language: ${language}\\nCustomer search query: ${query}`,
     },
   ];
 
-  const res = await fetch("https://api.openai.com/v1/responses", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model,
-      input,
-    }),
-  });
+  try {
+    const res = await fetch("https://api.openai.com/v1/responses", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ model, input }),
+    });
 
-  if (!res.ok) {
-    console.error("[EMRN SmartSearch] OpenAI translator error", res.status, await res.text());
-    return "";
+    if (!res.ok) {
+      console.error("[EMRN SmartSearch] OpenAI translator error", res.status, await res.text());
+      return { query: "", status: "error" as const };
+    }
+
+    const payload = await res.json();
+    const parsed = safeParseJson(extractOutputText(payload));
+    return { query: cleanSearchQuery(parsed?.english_query || ""), status: "called" as const };
+  } catch (error) {
+    console.error("[EMRN SmartSearch] OpenAI translator request failed", error);
+    return { query: "", status: "error" as const };
   }
-
-  const payload = await res.json();
-  const text = extractOutputText(payload);
-  const parsed = safeParseJson(text);
-  const englishQuery = cleanSearchQuery(parsed?.english_query || "");
-
-  return englishQuery;
 }
 
 export async function buildSmartSearchQuery(query: string): Promise<SmartQueryResult> {
   const original = cleanSearchQuery(query || "*");
   const cacheKey = original.toLowerCase();
   const cached = cache.get(cacheKey);
-
-  if (cached && cached.expiresAt > Date.now()) {
-    return cached.value;
-  }
+  if (cached && cached.expiresAt > Date.now()) return cached.value;
 
   const redirect = findSearchRedirect(original);
   const manual = expandSearchQuery(original);
   const language = manual.language || detectQueryLanguage(original);
 
-  let translated = "";
-  let translator: SmartQueryResult["translator"] = "none";
+  let translated = buildManualQuery(original, manual.expansions);
+  let translator: SmartQueryResult["translator"] = translated ? "manual" : "none";
+  let aiStatus: SmartQueryResult["ai_status"] = "not_needed";
 
-  if (manual.expansions.length) {
-    translated = manual.expansions[0];
-    translator = "manual";
-  }
-
+  const wordCount = normalizeSearchText(original).split(" ").filter(Boolean).length;
   const shouldUseAI =
     original !== "*" &&
     original.length >= 3 &&
-    (language === "fr" || manual.expansions.length === 0);
+    (language === "fr" || manual.expansions.length === 0) &&
+    (wordCount >= 3 || !translated);
 
   if (shouldUseAI) {
-    const aiQuery = await translateWithOpenAI(original, language);
-    if (aiQuery) {
-      translated = aiQuery;
+    const ai = await translateWithOpenAI(original, language);
+    aiStatus = ai.status;
+    if (ai.query) {
+      translated = ai.query;
       translator = translator === "manual" ? "manual+openai" : "openai";
     }
   }
@@ -140,7 +174,7 @@ export async function buildSmartSearchQuery(query: string): Promise<SmartQueryRe
   const fallbackTerms = Array.from(
     new Set([
       ...getFallbackTerms(original),
-      ...(searchOverrides.noResultsSuggestions[translated.toLowerCase()] || []),
+      ...(searchOverrides.noResultsSuggestions[(translated || original).toLowerCase()] || []),
     ])
   ).slice(0, 8);
 
@@ -152,15 +186,12 @@ export async function buildSmartSearchQuery(query: string): Promise<SmartQueryRe
     expansions: manual.expansions,
     translated_query: translated,
     translator,
+    ai_status: aiStatus,
     fallback_terms: fallbackTerms,
     redirect_url: redirect?.url,
   };
 
-  cache.set(cacheKey, {
-    value: result,
-    expiresAt: Date.now() + CACHE_TTL_MS,
-  });
-
+  cache.set(cacheKey, { value: result, expiresAt: Date.now() + CACHE_TTL_MS });
   return result;
 }
 

@@ -35,6 +35,7 @@ type SearchResponse = {
   expanded_query?: string;
   translated_query?: string;
   translator?: string;
+  ai_status?: string;
   expansions?: string[];
   fallback_terms?: string[];
   language?: string;
@@ -157,11 +158,12 @@ export default function SmartSearchLabPage() {
           </div>
 
           {data && (
-            <div style={{ marginTop: 16, display: "grid", gridTemplateColumns: "repeat(5,minmax(0,1fr))", gap: 10 }}>
+            <div style={{ marginTop: 16, display: "grid", gridTemplateColumns: "repeat(6,minmax(0,1fr))", gap: 10 }}>
               <Info label="Found" value={String(found)} />
               <Info label="Language" value={data.language || "-"} />
               <Info label="Translator" value={data.translator || "-"} />
               <Info label="Search query used" value={data.search_query || "-"} />
+              <Info label="AI status" value={data.ai_status || "-"} />
               <Info label="AI translated" value={data.translated_query || "-"} />
             </div>
           )}
