@@ -340,6 +340,7 @@
     params.set("q", "*");
     params.set("page", String(page));
     params.set("category_id", String(state.currentCategory.id));
+    if (state.currentCategory.name) params.set("category", state.currentCategory.name);
     params.set("sort", state.sort);
     if (state.brand) params.set("brand", state.brand);
     if (state.priceMin) params.set("price_min", state.priceMin);

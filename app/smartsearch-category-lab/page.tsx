@@ -91,6 +91,8 @@ export default function SmartSearchCategoryLabPage() {
     params.set("q", "*");
     params.set("page", String(nextPage));
     params.set("category_id", String(categoryId));
+    const chosenCategory = categories.find((cat) => cat.id === categoryId);
+    if (chosenCategory?.name) params.set("category", chosenCategory.name);
     params.set("sort", sort);
     if (brand) params.set("brand", brand);
     if (priceMin) params.set("price_min", priceMin);
