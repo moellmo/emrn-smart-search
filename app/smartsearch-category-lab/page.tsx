@@ -16,6 +16,10 @@ function sortByName(a: Category, b: Category) {
   return a.name.localeCompare(b.name);
 }
 
+function normalize(value: string) {
+  return String(value || "").toLowerCase().replace(/&/g, "and").replace(/[^a-z0-9]+/g, " ").trim();
+}
+
 export default function SmartSearchCategoryLabPage() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [selectedId, setSelectedId] = useState<number>(0);
@@ -65,8 +69,25 @@ export default function SmartSearchCategoryLabPage() {
     const json = await res.json();
     const cats: Category[] = json.categories || [];
     setCategories(cats);
-    if (!selectedId && cats.length) {
-      const firstUseful = cats.find((cat) => /diagnostics|gloves|masks|oxygen|training|first aid/i.test(cat.name)) || cats[0];
+
+    const params = new URLSearchParams(window.location.search);
+    const wanted = params.get("category") || params.get("cat") || "";
+    let firstUseful: Category | undefined;
+
+    if (wanted) {
+      const wantedNorm = normalize(wanted);
+      firstUseful =
+        cats.find((cat) => normalize(cat.name) === wantedNorm) ||
+        cats.find((cat) => normalize(cat.name).includes(wantedNorm)) ||
+        cats.find((cat) => wantedNorm.includes(normalize(cat.name)));
+    }
+
+    firstUseful =
+      firstUseful ||
+      cats.find((cat) => /diagnostics|gloves|masks|oxygen|training|first aid/i.test(cat.name)) ||
+      cats[0];
+
+    if (firstUseful) {
       setSelectedId(firstUseful.id);
       openParentPath(firstUseful.id, cats);
     }
@@ -91,9 +112,9 @@ export default function SmartSearchCategoryLabPage() {
     params.set("q", "*");
     params.set("page", String(nextPage));
     params.set("category_id", String(categoryId));
+    params.set("sort", sort);
     const chosenCategory = categories.find((cat) => cat.id === categoryId);
     if (chosenCategory?.name) params.set("category", chosenCategory.name);
-    params.set("sort", sort);
     if (brand) params.set("brand", brand);
     if (priceMin) params.set("price_min", priceMin);
     if (priceMax) params.set("price_max", priceMax);
@@ -126,6 +147,12 @@ export default function SmartSearchCategoryLabPage() {
     setBrand("");
     setPage(1);
     openParentPath(id);
+    const cat = categories.find((item) => item.id === id);
+    if (cat?.name) {
+      const url = new URL(window.location.href);
+      url.searchParams.set("category", cat.name);
+      window.history.replaceState({}, "", url.toString());
+    }
   }
 
   function renderTree(parentId = 0, level = 0): React.ReactNode {
@@ -135,20 +162,7 @@ export default function SmartSearchCategoryLabPage() {
       const isSelected = selectedId === category.id;
       return (
         <div key={category.id} style={{ marginLeft: level ? 12 : 0 }}>
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 6,
-              minHeight: 36,
-              border: isSelected ? "1px solid #c34d50" : "1px solid #e5e7eb",
-              background: isSelected ? "#fff8f8" : "#fff",
-              color: isSelected ? "#c34d50" : "#1f2937",
-              borderRadius: 12,
-              padding: "6px 7px",
-              marginBottom: 6,
-            }}
-          >
+          <div style={{ ...treeRowStyle, border: isSelected ? "1px solid #c34d50" : "1px solid #e5e7eb", background: isSelected ? "#fff8f8" : "#fff", color: isSelected ? "#c34d50" : "#1f2937" }}>
             {hasChildren ? (
               <button type="button" onClick={() => setOpenIds((ids) => ({ ...ids, [category.id]: !ids[category.id] }))} style={treeToggleStyle}>
                 {openIds[category.id] ? "−" : "+"}
@@ -175,13 +189,13 @@ export default function SmartSearchCategoryLabPage() {
           </div>
           <h1 style={{ margin: "8px 0 8px", fontSize: 34 }}>Category Page Replacement Test</h1>
           <p style={{ margin: 0, color: "#64748b" }}>
-            This now matches the real category layout better: subcategory bubbles, sort, brand filter, price filter, and category tree starts from the current category path.
+            Test a category directly with /smartsearch-category-lab?category=Diagnostics.
           </p>
         </div>
 
         {subcategories.length > 0 && (
           <div style={bubbleWrapStyle}>
-            {subcategories.slice(0, 10).map((cat) => (
+            {subcategories.slice(0, 12).map((cat) => (
               <button key={cat.id} onClick={() => chooseCategory(cat.id)} style={bubbleStyle}>
                 <span>{cat.name}</span>
               </button>
@@ -299,6 +313,7 @@ const applyButtonStyle = { width: "100%", height: 38, border: 0, borderRadius: 9
 const clearButtonStyle = { width: "100%", height: 36, border: 0, borderRadius: 999, background: "#c34d50", color: "#fff", fontWeight: 900, marginBottom: 12 };
 const facetButtonStyle = { background: "#fff", borderRadius: 12, minHeight: 38, padding: "8px 9px", display: "flex", justifyContent: "space-between", gap: 8, cursor: "pointer", fontWeight: 800 };
 const countStyle = { background: "#f3f4f6", color: "#555", borderRadius: 999, padding: "3px 7px", fontSize: 11 };
+const treeRowStyle = { display: "flex", alignItems: "center", gap: 6, minHeight: 36, borderRadius: 12, padding: "6px 7px", marginBottom: 6 };
 const treeToggleStyle = { border: 0, width: 24, height: 24, borderRadius: 7, background: "#f3f4f6", cursor: "pointer", fontWeight: 900 };
 const treeButtonStyle = { flex: 1, minWidth: 0, border: 0, background: "transparent", color: "inherit", cursor: "pointer", textAlign: "left" as const, fontWeight: 850, fontSize: 13, whiteSpace: "nowrap" as const, overflow: "hidden", textOverflow: "ellipsis" };
 const bubbleWrapStyle = { display: "flex", gap: 14, overflowX: "auto" as const, padding: "4px 0 18px", marginBottom: 2 };

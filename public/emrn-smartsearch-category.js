@@ -4,11 +4,17 @@
     apiBase: "",
     storeUrl: "https://emrn.ca",
     categoryMode: true,
-    replaceCategoryPages: false
+    replaceCategoryPages: false,
+    requireSmartCategoryParam: true,
+    addToCartEnabled: true
   };
 
   const config = Object.assign({}, DEFAULT_CONFIG, window.EMRNSmartSearchConfig || {});
+  const paramsOnLoad = new URLSearchParams(window.location.search);
+  const allowedByUrl = paramsOnLoad.get("smartcategory") === "1";
+
   if (!config.enabled || !config.categoryMode || !config.replaceCategoryPages) return;
+  if (config.requireSmartCategoryParam !== false && !allowedByUrl) return;
 
   const apiBase = (config.apiBase || "").replace(/\/$/, "");
   if (!apiBase) return;
@@ -24,7 +30,8 @@
     priceMin: "",
     priceMax: "",
     loading: false,
-    openIds: {}
+    openIds: {},
+    data: null
   };
 
   function money(value) {
@@ -42,8 +49,16 @@
     }
   }
 
-  async function fetchJson(url) {
-    const res = await fetch(url, { credentials: "omit" });
+  function escapeHtml(value) {
+    return String(value || "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  }
+
+  async function fetchJson(url, options) {
+    const res = await fetch(url, options || { credentials: "omit" });
     if (!res.ok) throw new Error(await res.text());
     return res.json();
   }
@@ -110,6 +125,7 @@
     selectors.forEach((selector) => {
       document.querySelectorAll(selector).forEach((el) => {
         if (!el.closest("#emrn-smart-category-root")) {
+          el.setAttribute("data-emrn-smart-hidden", "1");
           el.style.display = "none";
         }
       });
@@ -127,10 +143,10 @@
             <div class="emrn-smart-tree-row ${isSelected ? "is-selected" : ""}">
               ${
                 children.length
-                  ? `<button class="emrn-smart-tree-toggle" data-toggle-category="${cat.id}">${isOpen ? "−" : "+"}</button>`
+                  ? `<button class="emrn-smart-tree-toggle" data-toggle-category="${cat.id}" type="button">${isOpen ? "−" : "+"}</button>`
                   : `<span class="emrn-smart-tree-spacer"></span>`
               }
-              <button class="emrn-smart-tree-link" data-category-id="${cat.id}" title="${escapeHtml(cat.name)}">${escapeHtml(cat.name)}</button>
+              <button class="emrn-smart-tree-link" data-category-id="${cat.id}" type="button" title="${escapeHtml(cat.name)}">${escapeHtml(cat.name)}</button>
             </div>
             ${children.length && isOpen ? renderTree(cat.id, level + 1) : ""}
           </div>
@@ -139,17 +155,11 @@
       .join("");
   }
 
-  function escapeHtml(value) {
-    return String(value || "")
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;");
-  }
-
   function productCard(product) {
+    const pid = Number(product.product_id || product.id || 0);
+    const vid = Number(product.variant_id || 0);
     return `
-      <article class="emrn-smart-card">
+      <article class="emrn-smart-card" data-product-id="${pid}" data-variant-id="${vid}">
         <a class="emrn-smart-card-image" href="${escapeHtml(product.url || "#")}">
           ${product.image ? `<img src="${escapeHtml(product.image)}" alt="${escapeHtml(product.parent_name || product.name || "")}">` : ""}
         </a>
@@ -163,8 +173,11 @@
           </div>
           <div class="emrn-smart-price">${money(product.price)}</div>
           <div class="emrn-smart-actions">
-            <a class="emrn-smart-quote" href="${escapeHtml(product.url || "#")}">View Product</a>
+            <button class="emrn-smart-add-cart" type="button" data-product-id="${pid}" data-variant-id="${vid}">Add</button>
+            <input class="emrn-smart-qty" type="number" min="1" value="1" inputmode="numeric">
+            <a class="emrn-smart-view" href="${escapeHtml(product.url || "#")}">View</a>
           </div>
+          <div class="emrn-smart-cart-msg" aria-live="polite"></div>
         </div>
       </article>
     `;
@@ -184,7 +197,7 @@
             ? `<div class="emrn-smart-bubbles">
                 ${bubbles
                   .slice(0, 12)
-                  .map((cat) => `<button data-category-id="${cat.id}" class="emrn-smart-bubble">${escapeHtml(cat.name)}</button>`)
+                  .map((cat) => `<button data-category-id="${cat.id}" class="emrn-smart-bubble" type="button">${escapeHtml(cat.name)}</button>`)
                   .join("")}
               </div>`
             : ""
@@ -204,18 +217,18 @@
                 <input class="emrn-smart-price-min" placeholder="Min" value="${escapeHtml(state.priceMin)}">
                 <input class="emrn-smart-price-max" placeholder="Max" value="${escapeHtml(state.priceMax)}">
               </div>
-              <button class="emrn-smart-apply-price">Apply Price</button>
+              <button class="emrn-smart-apply-price" type="button">Apply Price</button>
             </div>
 
             <div class="emrn-smart-filter-block">
               <div class="emrn-smart-filter-heading">Brand</div>
-              ${state.brand ? `<button class="emrn-smart-clear-brand">Clear brand</button>` : ""}
+              ${state.brand ? `<button class="emrn-smart-clear-brand" type="button">Clear brand</button>` : ""}
               <div class="emrn-smart-facets">
                 ${brandFacet
                   .slice(0, 40)
                   .map(
                     (item) => `
-                      <button class="emrn-smart-facet ${state.brand === item.value ? "is-selected" : ""}" data-brand="${escapeHtml(item.value)}">
+                      <button class="emrn-smart-facet ${state.brand === item.value ? "is-selected" : ""}" data-brand="${escapeHtml(item.value)}" type="button">
                         <span>${escapeHtml(item.value)}</span><em>${item.count}</em>
                       </button>
                     `
@@ -232,12 +245,9 @@
 
           <section class="emrn-smart-results">
             <div class="emrn-smart-toolbar">
-              <div>
-                <div class="emrn-smart-count">${state.products.length} / ${state.found} shown</div>
-              </div>
-
+              <div class="emrn-smart-count">${state.products.length} / ${state.found} shown</div>
               <div class="emrn-smart-toolbar-actions">
-                <button class="emrn-smart-show-filters">Show Filters</button>
+                <button class="emrn-smart-show-filters" type="button">Show Filters</button>
                 <label>
                   View by
                   <select class="emrn-smart-sort">
@@ -260,7 +270,7 @@
 
             ${
               state.products.length < state.found
-                ? `<button class="emrn-smart-more" ${state.loading ? "disabled" : ""}>${state.loading ? "Loading..." : "Show more products"}</button>`
+                ? `<button class="emrn-smart-more" type="button" ${state.loading ? "disabled" : ""}>${state.loading ? "Loading..." : "Show more products"}</button>`
                 : ""
             }
           </section>
@@ -269,6 +279,74 @@
     `;
 
     bindEvents(root);
+  }
+
+  async function addToCart(button) {
+    const card = button.closest(".emrn-smart-card");
+    const message = card.querySelector(".emrn-smart-cart-msg");
+    const productId = Number(button.getAttribute("data-product-id"));
+    const variantId = Number(button.getAttribute("data-variant-id"));
+    const qty = Math.max(1, Number(card.querySelector(".emrn-smart-qty")?.value || 1));
+
+    if (!productId) {
+      message.textContent = "Missing product ID";
+      return;
+    }
+
+    button.disabled = true;
+    button.textContent = "Adding...";
+    message.textContent = "";
+
+    try {
+      const lineItem = {
+        quantity: qty,
+        productId
+      };
+      if (variantId) lineItem.variantId = variantId;
+
+      let cartId = null;
+      const current = await fetch("/api/storefront/carts?include=lineItems.physicalItems.options", {
+        credentials: "same-origin",
+        headers: { Accept: "application/json" }
+      });
+
+      if (current.ok) {
+        const carts = await current.json();
+        cartId = Array.isArray(carts) && carts[0]?.id ? carts[0].id : null;
+      }
+
+      const url = cartId ? `/api/storefront/carts/${cartId}/items` : "/api/storefront/carts";
+      const body = cartId ? { lineItems: [lineItem] } : { lineItems: [lineItem] };
+
+      const res = await fetch(url, {
+        method: "POST",
+        credentials: "same-origin",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json"
+        },
+        body: JSON.stringify(body)
+      });
+
+      if (!res.ok) {
+        throw new Error(await res.text());
+      }
+
+      message.textContent = "Added to cart";
+      button.textContent = "Added";
+
+      document.dispatchEvent(new CustomEvent("cart-quantity-update"));
+      window.dispatchEvent(new CustomEvent("emrn-smartsearch-cart-added"));
+    } catch (error) {
+      console.error("Smart category add to cart failed", error);
+      message.textContent = "Could not add. Use View.";
+      button.textContent = "Add";
+    } finally {
+      setTimeout(() => {
+        button.disabled = false;
+        if (button.textContent === "Added") button.textContent = "Add";
+      }, 1300);
+    }
   }
 
   function bindEvents(root) {
@@ -282,7 +360,11 @@
         state.page = 1;
         state.products = [];
         openParentPath(cat.id);
-        if (cat.url) window.history.replaceState({}, "", cat.url);
+
+        const nextUrl = new URL(cat.url || window.location.href, window.location.origin);
+        nextUrl.searchParams.set("smartcategory", "1");
+        window.history.replaceState({}, "", nextUrl.toString());
+
         runSearch(1, false);
       });
     });
@@ -302,6 +384,10 @@
       });
     });
 
+    root.querySelectorAll(".emrn-smart-add-cart").forEach((button) => {
+      button.addEventListener("click", () => addToCart(button));
+    });
+
     root.querySelector(".emrn-smart-clear-brand")?.addEventListener("click", () => {
       state.brand = "";
       runSearch(1, false);
@@ -318,17 +404,9 @@
       runSearch(1, false);
     });
 
-    root.querySelector(".emrn-smart-more")?.addEventListener("click", () => {
-      runSearch(state.page + 1, true);
-    });
-
-    root.querySelector(".emrn-smart-show-filters")?.addEventListener("click", () => {
-      root.classList.add("filters-open");
-    });
-
-    root.querySelector(".emrn-smart-mobile-filter-close")?.addEventListener("click", () => {
-      root.classList.remove("filters-open");
-    });
+    root.querySelector(".emrn-smart-more")?.addEventListener("click", () => runSearch(state.page + 1, true));
+    root.querySelector(".emrn-smart-show-filters")?.addEventListener("click", () => root.classList.add("filters-open"));
+    root.querySelector(".emrn-smart-mobile-filter-close")?.addEventListener("click", () => root.classList.remove("filters-open"));
   }
 
   async function runSearch(page = 1, append = false) {
@@ -399,8 +477,12 @@
       .emrn-smart-tags{display:flex;justify-content:center;flex-wrap:wrap;gap:5px;margin-top:8px}
       .emrn-smart-tags span{background:#f3f4f6;border-radius:999px;padding:4px 7px;font-size:10px;font-weight:800}
       .emrn-smart-price{font-weight:800;font-size:16px;margin-top:8px}
-      .emrn-smart-actions{margin-top:10px}
-      .emrn-smart-quote{display:inline-flex;align-items:center;justify-content:center;min-width:142px;height:30px;border:1px solid #c34d50;border-radius:999px;color:#c34d50;text-decoration:none;font-weight:900;font-size:12px}
+      .emrn-smart-actions{margin-top:10px;display:flex;justify-content:center;gap:8px;align-items:center}
+      .emrn-smart-add-cart{height:36px;border:0;border-radius:999px;background:#c34d50;color:#fff;font-weight:900;padding:0 15px;cursor:pointer}
+      .emrn-smart-add-cart[disabled]{opacity:.6;cursor:wait}
+      .emrn-smart-qty{width:58px;height:36px;border:1px solid #e5e7eb;border-radius:999px;text-align:center;font-weight:800}
+      .emrn-smart-view{height:36px;border:1px solid #c34d50;border-radius:999px;color:#c34d50;text-decoration:none;font-weight:900;padding:0 13px;display:inline-flex;align-items:center}
+      .emrn-smart-cart-msg{min-height:18px;margin-top:7px;font-size:12px;font-weight:800;color:#166534}
       .emrn-smart-more{display:block;margin:24px auto 0;border:0;border-radius:999px;background:#c34d50;color:#fff;height:44px;padding:0 24px;font-weight:900;cursor:pointer}
       .emrn-smart-loading{padding:30px;background:#fff;border-radius:16px;text-align:center;font-weight:900}
       @media(max-width:900px){
@@ -417,32 +499,31 @@
   }
 
   async function init() {
-    const categoriesData = await fetchJson(`${apiBase}/api/category-tree`);
-    state.categories = categoriesData.categories || [];
-    state.currentCategory = matchCurrentCategory(state.categories);
+    try {
+      const categoriesData = await fetchJson(`${apiBase}/api/category-tree`);
+      state.categories = categoriesData.categories || [];
+      state.currentCategory = matchCurrentCategory(state.categories);
 
-    if (!state.currentCategory) return;
+      if (!state.currentCategory) return;
 
-    openParentPath(state.currentCategory.id);
-    hideOldProductGrid();
+      openParentPath(state.currentCategory.id);
+      hideOldProductGrid();
 
-    const mount = findMount();
-    if (!mount) return;
+      const mount = findMount();
+      if (!mount) return;
 
-    const root = document.createElement("div");
-    root.id = "emrn-smart-category-root";
-    mount.parentNode.insertBefore(root, mount);
-    if (mount !== root) {
+      const root = document.createElement("div");
+      root.id = "emrn-smart-category-root";
+      mount.parentNode.insertBefore(root, mount);
       mount.style.display = "none";
+
+      injectCss();
+      await runSearch(1, false);
+    } catch (error) {
+      console.error("EMRN SmartCategory failed", error);
     }
-
-    injectCss();
-    await runSearch(1, false);
   }
 
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", init);
-  } else {
-    init();
-  }
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init);
+  else init();
 })();
