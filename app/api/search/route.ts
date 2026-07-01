@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { typesenseSearch } from "../../../lib/typesense";
-import { applyHiddenSkuFilter, buildSmartSearchQuery } from "../../../lib/smart-search-translator";
+import { buildSmartSearchQuery } from "../../../lib/smart-search-translator";
+import { applyHiddenSkuFilter, applyPinnedSkuRanking, explainResult } from "../../../lib/search-ranking";
+import { getPinnedSkusForQuery } from "../../../lib/search-overrides";
 
 const COLLECTION_NAME = "emrn_products";
 const STORE_URL = process.env.EMRN_STORE_URL || "https://emrn.ca";
@@ -58,7 +60,7 @@ export async function GET(req: NextRequest) {
     });
 
   if (results.hits) {
-    results.hits = applyHiddenSkuFilter(results.hits).map((hit: any) => ({
+    results.hits = applyPinnedSkuRanking(applyHiddenSkuFilter(results.hits), q).map((hit: any) => ({
       ...hit,
       document: {
         ...hit.document,
@@ -66,6 +68,7 @@ export async function GET(req: NextRequest) {
         sold_by: hit.document?.sold_by || "",
         variant_id: hit.document?.variant_id || 0,
         is_variant: Boolean(hit.document?.is_variant),
+        smart_reasons: explainResult(hit, q),
       },
     }));
   }
@@ -75,6 +78,7 @@ export async function GET(req: NextRequest) {
       ...results,
       ...smartQuery,
       fallback_terms: results.hits?.length ? [] : smartQuery.fallback_terms,
+      pinned_skus: getPinnedSkusForQuery(q),
     },
     { headers: corsHeaders }
   );

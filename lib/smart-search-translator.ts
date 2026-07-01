@@ -1,5 +1,5 @@
 import { detectQueryLanguage, expandSearchQuery, getFallbackTerms, normalizeSearchText } from "./search-language";
-import { findSearchRedirect, searchOverrides } from "./search-overrides";
+import { findSearchRedirect, getBoostTermsForQuery, getNoResultsSuggestionsForQuery, searchOverrides } from "./search-overrides";
 
 type SmartQueryResult = {
   original_query: string;
@@ -171,9 +171,15 @@ export async function buildSmartSearchQuery(query: string): Promise<SmartQueryRe
     }
   }
 
+  const boostTerms = getBoostTermsForQuery(original);
+  if (boostTerms.length) {
+    translated = cleanSearchQuery([translated || original, ...boostTerms].join(" "));
+  }
+
   const fallbackTerms = Array.from(
     new Set([
       ...getFallbackTerms(original),
+      ...getNoResultsSuggestionsForQuery(original),
       ...(searchOverrides.noResultsSuggestions[(translated || original).toLowerCase()] || []),
     ])
   ).slice(0, 8);

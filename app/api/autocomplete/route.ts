@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { typesenseSearch } from "../../../lib/typesense";
 import { buildSmartSearchQuery } from "../../../lib/smart-search-translator";
+import { applyHiddenSkuFilter, applyPinnedSkuRanking } from "../../../lib/search-ranking";
 
 const COLLECTION_NAME = "emrn_products";
 const STORE_URL = process.env.EMRN_STORE_URL || "https://emrn.ca";
@@ -84,7 +85,7 @@ export async function GET(req: NextRequest) {
       highlight_full_fields: "name,sku,brand,sold_by,categories,variant_label,option_text",
     });
 
-  const hits = results.hits || [];
+  const hits = applyPinnedSkuRanking(applyHiddenSkuFilter(results.hits || []), q);
   const products = hits.map((hit: any) => normalizeHit(hit.document));
   const categoryUrls = categoryUrlMapFromHits(hits);
 

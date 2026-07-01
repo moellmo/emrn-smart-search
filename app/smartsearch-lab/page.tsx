@@ -17,6 +17,7 @@ type Hit = {
     url?: string;
     option_text?: string;
     variant_label?: string;
+    smart_reasons?: string[];
   };
 };
 
@@ -40,6 +41,7 @@ type SearchResponse = {
   fallback_terms?: string[];
   language?: string;
   redirect_url?: string;
+  pinned_skus?: string[];
 };
 
 const examples = [
@@ -158,13 +160,14 @@ export default function SmartSearchLabPage() {
           </div>
 
           {data && (
-            <div style={{ marginTop: 16, display: "grid", gridTemplateColumns: "repeat(6,minmax(0,1fr))", gap: 10 }}>
+            <div style={{ marginTop: 16, display: "grid", gridTemplateColumns: "repeat(7,minmax(0,1fr))", gap: 10 }}>
               <Info label="Found" value={String(found)} />
               <Info label="Language" value={data.language || "-"} />
               <Info label="Translator" value={data.translator || "-"} />
               <Info label="Search query used" value={data.search_query || "-"} />
               <Info label="AI status" value={data.ai_status || "-"} />
               <Info label="AI translated" value={data.translated_query || "-"} />
+              <Info label="Pinned SKUs" value={data.pinned_skus?.join(", ") || "-"} />
             </div>
           )}
         </div>
@@ -237,8 +240,13 @@ export default function SmartSearchLabPage() {
                       {product.brand && <Tag>{product.brand}</Tag>}
                       {product.sold_by && <Tag>{product.sold_by}</Tag>}
                       {product.sku && <Tag>SKU: {product.sku}</Tag>}
+                      <Tag>PID: {product.product_id}</Tag>
+                      <Tag>VID: {product.variant_id || 0}</Tag>
                     </div>
                     <div style={{ marginTop: 10, fontSize: 20 }}>{money(product.price)}</div>
+                    <div style={{ marginTop: 8, color: "#64748b", fontSize: 11, fontWeight: 800 }}>
+                      {(product.smart_reasons || []).join(" • ")}
+                    </div>
                   </div>
                 </article>
               ))}
