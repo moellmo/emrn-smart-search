@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { typesenseSearch } from "../../../lib/typesense";
-import { expandSearchQuery, getFallbackTerms } from "../../../lib/search-language";
+import { buildSmartSearchQuery } from "../../../lib/smart-search-translator";
 
 const COLLECTION_NAME = "emrn_products";
 const STORE_URL = process.env.EMRN_STORE_URL || "https://emrn.ca";
@@ -66,14 +66,13 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ products: [], facets: [] }, { headers: corsHeaders });
   }
 
-  const expandedQuery = expandSearchQuery(q);
-  const searchQ = expandedQuery.expansions.length ? expandedQuery.expansions[0] : q;
+  const smartQuery = await buildSmartSearchQuery(q);
 
   const results: any = await typesenseSearch
     .collections(COLLECTION_NAME)
     .documents()
     .search({
-      q: searchQ,
+      q: smartQuery.search_query,
       query_by: "sku,all_skus,name,parent_name,brand,sold_by,categories,variant_label,option_text,search_text",
       query_by_weights: "30,24,16,12,8,7,6,5,5,3",
       filter_by: "is_visible:=true",
@@ -105,10 +104,8 @@ export async function GET(req: NextRequest) {
     {
       products,
       facets,
-      language: expandedQuery.language,
-      expanded_query: expandedQuery.expanded,
-      expansions: expandedQuery.expansions,
-      fallback_terms: products.length ? [] : getFallbackTerms(q),
+      ...smartQuery,
+      fallback_terms: products.length ? [] : smartQuery.fallback_terms,
     },
     { headers: corsHeaders }
   );

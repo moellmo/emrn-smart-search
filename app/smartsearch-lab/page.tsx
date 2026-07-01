@@ -31,10 +31,14 @@ type SearchResponse = {
   hits?: Hit[];
   facet_counts?: FacetCount[];
   original_query?: string;
+  search_query?: string;
   expanded_query?: string;
+  translated_query?: string;
+  translator?: string;
   expansions?: string[];
   fallback_terms?: string[];
   language?: string;
+  redirect_url?: string;
 };
 
 const examples = [
@@ -44,11 +48,12 @@ const examples = [
   "masques",
   "manikin",
   "mannequin",
-  "mannequin rcr",
-  "pansement",
-  "seringue",
-  "oxygène",
-  "tensiomètre",
+  "mannequin pédiatrique de formation",
+  "pansement pour plaie",
+  "seringue 3 ml",
+  "masque avec réservoir",
+  "brassard de tension artérielle",
+  "fauteuil de douche",
 ];
 
 function money(value?: number) {
@@ -115,9 +120,9 @@ export default function SmartSearchLabPage() {
           <div style={{ color: "#c34d50", fontWeight: 900, letterSpacing: ".08em", fontSize: 12, textTransform: "uppercase" }}>
             EMRN SmartSearch Lab
           </div>
-          <h1 style={{ margin: "8px 0 8px", fontSize: 34 }}>Test search without BigCommerce</h1>
+          <h1 style={{ margin: "8px 0 8px", fontSize: 34 }}>AI Search Translator Test</h1>
           <p style={{ margin: 0, color: "#64748b" }}>
-            Test Typesense results, French synonyms, filters, and pagination before putting the storefront script back on.
+            Test French phrases, AI translation, manual synonyms, filters, and pagination before putting the storefront script back on.
           </p>
 
           <form onSubmit={submit} style={{ display: "flex", gap: 10, marginTop: 20 }}>
@@ -152,11 +157,12 @@ export default function SmartSearchLabPage() {
           </div>
 
           {data && (
-            <div style={{ marginTop: 16, display: "grid", gridTemplateColumns: "repeat(4,minmax(0,1fr))", gap: 10 }}>
+            <div style={{ marginTop: 16, display: "grid", gridTemplateColumns: "repeat(5,minmax(0,1fr))", gap: 10 }}>
               <Info label="Found" value={String(found)} />
               <Info label="Language" value={data.language || "-"} />
-              <Info label="Expanded query" value={data.expanded_query || "-"} />
-              <Info label="Expansions" value={data.expansions?.join(", ") || "-"} />
+              <Info label="Translator" value={data.translator || "-"} />
+              <Info label="Search query used" value={data.search_query || "-"} />
+              <Info label="AI translated" value={data.translated_query || "-"} />
             </div>
           )}
         </div>

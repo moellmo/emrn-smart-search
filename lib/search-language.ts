@@ -17,7 +17,7 @@ export function normalizeSearchText(value: string) {
     .trim();
 }
 
-const synonymPairs: Array<[string, string[]]> = [
+export const manualSearchSynonyms: Array<[string, string[]]> = [
   ["gants", ["gloves", "medical gloves", "exam gloves", "nitrile gloves", "surgical gloves"]],
   ["gant", ["glove", "gloves"]],
   ["masques", ["masks", "face masks", "respirators"]],
@@ -44,6 +44,7 @@ const synonymPairs: Array<[string, string[]]> = [
   ["tensiometre", ["blood pressure", "sphygmomanometer", "bp cuff"]],
   ["tensiomètre", ["blood pressure", "sphygmomanometer", "bp cuff"]],
   ["brassard", ["cuff", "blood pressure cuff"]],
+  ["brassard de tension", ["blood pressure cuff"]],
   ["stethoscope", ["stethoscope"]],
   ["stéthoscope", ["stethoscope"]],
   ["dea", ["aed", "defibrillator"]],
@@ -51,10 +52,16 @@ const synonymPairs: Array<[string, string[]]> = [
   ["défibrillateur", ["defibrillator", "aed"]],
   ["rcr", ["cpr"]],
   ["mannequin rcr", ["cpr manikin", "training manikin"]],
+  ["mannequin", ["manikin", "training manikin", "simulation manikin", "patient simulator"]],
+  ["mannequins", ["manikins", "training manikins", "simulation manikins", "patient simulators"]],
+  ["mannequin de formation", ["training manikin", "simulation manikin"]],
+  ["mannequin cpr", ["cpr manikin", "cpr training manikin"]],
+  ["mannequin de rcr", ["cpr manikin", "cpr training manikin"]],
   ["premiers soins", ["first aid"]],
   ["trousse premiers soins", ["first aid kit"]],
   ["trousse de premiers soins", ["first aid kit"]],
   ["chaise douche", ["shower chair"]],
+  ["chaise de douche", ["shower chair"]],
   ["banc de transfert", ["transfer bench"]],
   ["canne", ["cane"]],
   ["deambulateur", ["walker", "rollator"]],
@@ -70,6 +77,7 @@ const synonymPairs: Array<[string, string[]]> = [
   ["lit medical", ["medical bed", "hospital bed"]],
   ["lit médical", ["medical bed", "hospital bed"]],
   ["bp cuff", ["blood pressure cuff", "sphygmomanometer"]],
+  ["blood pressure", ["sphygmomanometer", "bp cuff"]],
   ["defib", ["defibrillator", "aed"]],
   ["defib pads", ["aed pads", "defibrillator pads"]],
   ["non rebreather", ["oxygen mask", "non-rebreather mask"]],
@@ -77,13 +85,18 @@ const synonymPairs: Array<[string, string[]]> = [
   ["bvm", ["bag valve mask", "resuscitator"]],
 ];
 
+const frenchSignals = [
+  "gants", "gant", "masques", "masque", "pansement", "seringue", "aiguille",
+  "fauteuil", "oxygene", "oxygène", "tensiometre", "tensiomètre", "brassard",
+  "defibrillateur", "défibrillateur", "premiers", "trousse", "deambulateur",
+  "déambulateur", "thermometre", "thermomètre", "ruban", "mannequin", "chaise",
+  "banc", "canne", "lit", "compresse", "compresses"
+];
+
 export function detectQueryLanguage(query: string): LanguageCode {
   const normalized = normalizeSearchText(query);
   if (/[àâäçéèêëîïôöùûüÿœ]/i.test(query)) return "fr";
-  if (synonymPairs.some(([term]) => normalized.includes(normalizeSearchText(term)) && /[a-z]/.test(term))) {
-    const frenchOnly = ["gants","gant","masques","masque","pansement","seringue","aiguille","fauteuil","oxygene","oxygène","tensiometre","tensiomètre","brassard","défibrillateur","defibrillateur","premiers","trousse","deambulateur","déambulateur","thermometre","thermomètre","ruban"];
-    if (frenchOnly.some((term) => normalized.includes(normalizeSearchText(term)))) return "fr";
-  }
+  if (frenchSignals.some((term) => normalized.includes(normalizeSearchText(term)))) return "fr";
   return "en";
 }
 
@@ -91,7 +104,7 @@ export function expandSearchQuery(query: string) {
   const normalized = normalizeSearchText(query);
   const additions = new Set<string>();
 
-  for (const [term, synonyms] of synonymPairs) {
+  for (const [term, synonyms] of manualSearchSynonyms) {
     const normalizedTerm = normalizeSearchText(term);
     if (normalized === normalizedTerm || normalized.includes(normalizedTerm)) {
       synonyms.forEach((synonym) => additions.add(synonym));
@@ -110,7 +123,7 @@ export function getFallbackTerms(query: string) {
   const normalized = normalizeSearchText(query);
   const suggestions = new Set<string>();
 
-  for (const [term, synonyms] of synonymPairs) {
+  for (const [term, synonyms] of manualSearchSynonyms) {
     const normalizedTerm = normalizeSearchText(term);
     if (normalized.includes(normalizedTerm) || normalizedTerm.includes(normalized)) {
       synonyms.slice(0, 4).forEach((synonym) => suggestions.add(synonym));
