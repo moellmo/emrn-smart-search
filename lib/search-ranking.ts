@@ -1,9 +1,9 @@
-import { getPinnedSkusForQuery, searchOverrides } from "./search-overrides";
+import { getPinnedSkusForQuery, SearchOverrides } from "./search-overrides";
 
-export function applyHiddenSkuFilter(hits: any[] = []) {
-  if (!searchOverrides.hiddenSkus.length) return hits;
+export function applyHiddenSkuFilter(hits: any[] = [], controls: SearchOverrides) {
+  if (!controls.hiddenSkus.length) return hits;
 
-  const hidden = new Set(searchOverrides.hiddenSkus.map((sku) => sku.toLowerCase()));
+  const hidden = new Set(controls.hiddenSkus.map((sku) => sku.toLowerCase()));
 
   return hits.filter((hit) => {
     const sku = String(hit.document?.sku || "").toLowerCase();
@@ -15,8 +15,8 @@ export function applyHiddenSkuFilter(hits: any[] = []) {
   });
 }
 
-export function applyPinnedSkuRanking(hits: any[] = [], originalQuery: string) {
-  const pinnedSkus = getPinnedSkusForQuery(originalQuery);
+export function applyPinnedSkuRanking(hits: any[] = [], originalQuery: string, controls: SearchOverrides) {
+  const pinnedSkus = getPinnedSkusForQuery(originalQuery, controls);
   if (!pinnedSkus.length) return hits;
 
   const pinned = pinnedSkus.map((sku) => sku.toLowerCase());
@@ -45,9 +45,9 @@ export function applyPinnedSkuRanking(hits: any[] = [], originalQuery: string) {
   });
 }
 
-export function explainResult(hit: any, originalQuery: string) {
+export function explainResult(hit: any, originalQuery: string, controls: SearchOverrides) {
   const doc = hit.document || {};
-  const pinnedSkus = getPinnedSkusForQuery(originalQuery).map((sku) => sku.toLowerCase());
+  const pinnedSkus = getPinnedSkusForQuery(originalQuery, controls).map((sku) => sku.toLowerCase());
   const sku = String(doc.sku || "").toLowerCase();
 
   const reasons: string[] = [];

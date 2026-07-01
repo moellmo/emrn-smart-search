@@ -1,5 +1,5 @@
 import { detectQueryLanguage, expandSearchQuery, getFallbackTerms, normalizeSearchText } from "./search-language";
-import { findSearchRedirect, getBoostTermsForQuery, getNoResultsSuggestionsForQuery, searchOverrides } from "./search-overrides";
+import { findSearchRedirect, getBoostTermsForQuery, getEffectiveSearchOverrides, getNoResultsSuggestionsForQuery } from "./search-overrides";
 
 type SmartQueryResult = {
   original_query: string;
@@ -147,7 +147,8 @@ export async function buildSmartSearchQuery(query: string): Promise<SmartQueryRe
   const cached = cache.get(cacheKey);
   if (cached && cached.expiresAt > Date.now()) return cached.value;
 
-  const redirect = findSearchRedirect(original);
+  const controls = await getEffectiveSearchOverrides();
+  const redirect = findSearchRedirect(original, controls);
   const manual = expandSearchQuery(original);
   const language = manual.language || detectQueryLanguage(original);
 
@@ -171,7 +172,7 @@ export async function buildSmartSearchQuery(query: string): Promise<SmartQueryRe
     }
   }
 
-  const boostTerms = getBoostTermsForQuery(original);
+  const boostTerms = getBoostTermsForQuery(original, controls);
   if (boostTerms.length) {
     translated = cleanSearchQuery([translated || original, ...boostTerms].join(" "));
   }
@@ -179,8 +180,8 @@ export async function buildSmartSearchQuery(query: string): Promise<SmartQueryRe
   const fallbackTerms = Array.from(
     new Set([
       ...getFallbackTerms(original),
-      ...getNoResultsSuggestionsForQuery(original),
-      ...(searchOverrides.noResultsSuggestions[(translated || original).toLowerCase()] || []),
+      ...getNoResultsSuggestionsForQuery(original, controls),
+      ...(controls.noResultsSuggestions[(translated || original).toLowerCase()] || []),
     ])
   ).slice(0, 8);
 
@@ -201,8 +202,3 @@ export async function buildSmartSearchQuery(query: string): Promise<SmartQueryRe
   return result;
 }
 
-export function applyHiddenSkuFilter(hits: any[] = []) {
-  if (!searchOverrides.hiddenSkus.length) return hits;
-  const hidden = new Set(searchOverrides.hiddenSkus.map((sku) => sku.toLowerCase()));
-  return hits.filter((hit) => !hidden.has(String(hit.document?.sku || "").toLowerCase()));
-}

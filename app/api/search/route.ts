@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { typesenseSearch } from "../../../lib/typesense";
 import { buildSmartSearchQuery } from "../../../lib/smart-search-translator";
 import { applyHiddenSkuFilter, applyPinnedSkuRanking, explainResult } from "../../../lib/search-ranking";
-import { getPinnedSkusForQuery } from "../../../lib/search-overrides";
+import { getEffectiveSearchOverrides, getPinnedSkusForQuery } from "../../../lib/search-overrides";
 
 const COLLECTION_NAME = "emrn_products";
 const STORE_URL = process.env.EMRN_STORE_URL || "https://emrn.ca";
@@ -33,6 +33,7 @@ export async function GET(req: NextRequest) {
   const categoryId = searchParams.get("category_id");
   const availability = searchParams.get("availability");
 
+  const controls = await getEffectiveSearchOverrides();
   const smartQuery = await buildSmartSearchQuery(q);
   const filters: string[] = ["is_visible:=true"];
 
@@ -60,7 +61,7 @@ export async function GET(req: NextRequest) {
     });
 
   if (results.hits) {
-    results.hits = applyPinnedSkuRanking(applyHiddenSkuFilter(results.hits), q).map((hit: any) => ({
+    results.hits = applyPinnedSkuRanking(applyHiddenSkuFilter(results.hits, controls), q, controls).map((hit: any) => ({
       ...hit,
       document: {
         ...hit.document,
@@ -68,7 +69,7 @@ export async function GET(req: NextRequest) {
         sold_by: hit.document?.sold_by || "",
         variant_id: hit.document?.variant_id || 0,
         is_variant: Boolean(hit.document?.is_variant),
-        smart_reasons: explainResult(hit, q),
+        smart_reasons: explainResult(hit, q, controls),
       },
     }));
   }
@@ -78,7 +79,7 @@ export async function GET(req: NextRequest) {
       ...results,
       ...smartQuery,
       fallback_terms: results.hits?.length ? [] : smartQuery.fallback_terms,
-      pinned_skus: getPinnedSkusForQuery(q),
+      pinned_skus: getPinnedSkusForQuery(q, controls),
     },
     { headers: corsHeaders }
   );
