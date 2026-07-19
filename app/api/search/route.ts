@@ -125,7 +125,9 @@ function categoryFamilyIdsForQuery(query: string, categories: BCCategory[]) {
     );
     const wordMatches = Array.from(wordTerms).some((term) => {
       const root = singularize(term);
-      return categoryName === term || categorySingular === term || categorySingular === root || categoryName.includes(term);
+      const categoryWords = categoryName.split(/\s+/).filter(Boolean);
+      const categoryRoots = categoryWords.map(singularize);
+      return categoryName === term || categorySingular === term || categorySingular === root || categoryWords.includes(term) || categoryRoots.includes(root);
     });
     if (phraseMatches || wordMatches) {
       matched.add(Number(category.id));
