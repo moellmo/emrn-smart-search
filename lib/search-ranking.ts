@@ -172,8 +172,9 @@ const mainEquipmentDemote = [
 
 export function applyIntentRanking(hits: any[] = [], originalQuery: string, searchQuery = "") {
   const query = normalizeSearchText(`${originalQuery} ${searchQuery}`);
+  const originalNormalizedQuery = normalizeSearchText(originalQuery);
   if (!hits.length || !query) return hits;
-  const isAccessoryQuery = hasAny(query, accessoryTerms);
+  const isAccessoryQuery = hasAny(originalNormalizedQuery, accessoryTerms);
 
   const intents = [
     {
@@ -287,13 +288,19 @@ export function applyIntentRanking(hits: any[] = [], originalQuery: string, sear
     let intentScore = 0;
     const textScore = Number(hit.text_match || hit._text_match || 0);
     for (const intent of active) {
+      if (intent.skipDemote) continue;
       if (hasAny(text, intent.prefer)) intentScore += 10;
-      if (!intent.skipDemote && hasAny(text, intent.demote)) intentScore -= 20;
+      if (hasAny(text, intent.demote)) intentScore -= 20;
     }
-    return intentScore * 1000000000000000 + textScore;
+    return { intentScore, textScore };
   };
 
-  return [...hits].sort((a, b) => scoreHit(b) - scoreHit(a));
+  return [...hits].sort((a, b) => {
+    const aScore = scoreHit(a);
+    const bScore = scoreHit(b);
+    if (aScore.intentScore !== bScore.intentScore) return bScore.intentScore - aScore.intentScore;
+    return bScore.textScore - aScore.textScore;
+  });
 }
 
 export function explainResult(hit: any, originalQuery: string, controls: SearchOverrides) {
