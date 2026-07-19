@@ -260,15 +260,35 @@
     const countByName=new Map((categoryFacetCounts||[]).map(item=>[String(item.value||"").toLowerCase(),Number(item.count||0)]));
     const catalogCountByName=new Map((categoryTreeCache?.cats||[]).map(cat=>[String(cat.name||"").toLowerCase(),Number(cat.product_count||0)]));
     const visibleIds=new Set();
-    const hasOwnCount=(cat)=>countByName.has(String(cat.name||"").toLowerCase());
+    const hasOwnCount=(cat)=>{const key=String(cat.name||"").toLowerCase();return useScopedCounts?countByName.has(key):Boolean((catalogCountByName.get(key)||0)||countByName.has(key))};
+    const byId=new Map((categoryTreeCache?.cats||[]).map(cat=>[Number(cat.id),cat]));
 
     function markAncestors(cat){
       if(!cat||visibleIds.has(Number(cat.id)))return;
       visibleIds.add(Number(cat.id));
       const parentId=Number(cat.parent_id||0);
       if(parentId){
-        const parent=(categoryTreeCache?.cats||[]).find(item=>Number(item.id)===parentId);
+        const parent=byId.get(parentId);
         if(parent)markAncestors(parent);
+      }
+    }
+
+    function markCatalogBranch(cat){
+      if(!cat)return false;
+      const children=categoryTreeCache?.byParent.get(Number(cat.id))||[];
+      let childHasProducts=false;
+      children.forEach(child=>{if(markCatalogBranch(child))childHasProducts=true});
+      const include=hasOwnCount(cat)||childHasProducts||Number(selectedId)===Number(cat.id);
+      if(include)visibleIds.add(Number(cat.id));
+      return include;
+    }
+
+    if(selectedId&&!useScopedCounts){
+      const selected=byId.get(Number(selectedId));
+      if(selected){
+        markAncestors(selected);
+        markCatalogBranch(selected);
+        return {visibleIds,countByName,catalogCountByName,useScopedCounts};
       }
     }
 
@@ -314,7 +334,7 @@
     const params=new URLSearchParams(window.location.search);
     const q=String(params.get("search_query")||params.get("q")||"").trim();
     const isTypedSearch=Boolean(q&&q!=="*");
-    const useScopedCounts=Boolean(isTypedSearch||selectedId||selectedName||params.get("brand")||params.get("sold_by")||params.get("color")||shouldReplaceBrand&&configuredBrandName);
+    const useScopedCounts=Boolean(isTypedSearch||params.get("brand")||params.get("sold_by")||params.get("color")||shouldReplaceBrand&&configuredBrandName);
     const helpers=buildRelevantCategoryHelpers(categoryFacetCounts,selectedId,selectedName,useScopedCounts);
     const tree=renderCategoryBranch(0,0,selectedId,selectedName,helpers);
     if(!tree)return "";

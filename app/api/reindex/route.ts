@@ -74,19 +74,7 @@ async function recreateCollection() {
   });
 }
 
-export async function POST(req: NextRequest) {
-  const secret = req.headers.get("x-reindex-secret");
-  const adminPassword = req.headers.get("x-smartsearch-admin-password");
-  const hasReindexSecret = Boolean(process.env.REINDEX_SECRET && secret === process.env.REINDEX_SECRET);
-  const hasAdminPassword = Boolean(
-    process.env.SMARTSEARCH_ADMIN_PASSWORD &&
-      adminPassword === process.env.SMARTSEARCH_ADMIN_PASSWORD
-  );
-
-  if (!hasReindexSecret && !hasAdminPassword) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
+async function runReindex() {
   const startedAt = Date.now();
 
   await recreateCollection();
@@ -114,4 +102,34 @@ export async function POST(req: NextRequest) {
     failed: failed.slice(0, 10),
     ms: Date.now() - startedAt
   });
+}
+
+export async function GET(req: NextRequest) {
+  const authHeader = req.headers.get("authorization");
+  const hasCronSecret = Boolean(
+    process.env.CRON_SECRET &&
+      authHeader === `Bearer ${process.env.CRON_SECRET}`
+  );
+
+  if (!hasCronSecret) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  return runReindex();
+}
+
+export async function POST(req: NextRequest) {
+  const secret = req.headers.get("x-reindex-secret");
+  const adminPassword = req.headers.get("x-smartsearch-admin-password");
+  const hasReindexSecret = Boolean(process.env.REINDEX_SECRET && secret === process.env.REINDEX_SECRET);
+  const hasAdminPassword = Boolean(
+    process.env.SMARTSEARCH_ADMIN_PASSWORD &&
+      adminPassword === process.env.SMARTSEARCH_ADMIN_PASSWORD
+  );
+
+  if (!hasReindexSecret && !hasAdminPassword) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  return runReindex();
 }
