@@ -102,6 +102,15 @@ function hasAny(text: string, terms: string[]) {
   return terms.some((term) => text.includes(normalizeSearchText(term)));
 }
 
+function hasAnyWholeWord(text: string, terms: string[]) {
+  return terms.some((term) => {
+    const normalized = normalizeSearchText(term);
+    if (!normalized) return false;
+    const escaped = normalized.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    return new RegExp(`(^|\\s)${escaped}(\\s|$)`).test(text);
+  });
+}
+
 const accessoryTerms = [
   "pad",
   "pads",
@@ -170,11 +179,27 @@ const mainEquipmentDemote = [
   "consumables",
 ];
 
+const accessoryIntentRules = [
+  {
+    match: ["aed", "defib", "defibrillator", "defibrillators", "defibrillateur", "défibrillateur", "dea"],
+    accessories: ["pad", "pads", "electrode", "electrodes", "battery", "batteries", "cabinet", "case", "sign", "trainer", "training", "bracket", "mount"],
+    demoteMain: ["automated external defibrillator", "defibrillator", "aed 3", "lifepak cr2", "heartstart frx", "heartstart onsite", "powerheart"],
+  },
+  {
+    match: ["patient monitor", "patient monitors", "vital signs monitor", "vital sign monitor", "monitor", "monitors"],
+    accessories: ["cuff", "cuffs", "hose", "tube", "tubing", "cable", "cables", "lead", "leads", "leadwire", "sensor", "sensors", "probe", "probes", "spo2", "ecg", "ekg", "paper", "roll"],
+    demoteMain: ["patient monitor", "vital signs monitor", "vital sign monitor", "bedside monitor", "multiparameter monitor"],
+  },
+];
+
 export function applyIntentRanking(hits: any[] = [], originalQuery: string, searchQuery = "") {
   const query = normalizeSearchText(`${originalQuery} ${searchQuery}`);
   const originalNormalizedQuery = normalizeSearchText(originalQuery);
   if (!hits.length || !query) return hits;
   const isAccessoryQuery = hasAny(originalNormalizedQuery, accessoryTerms);
+  const activeAccessoryRules = accessoryIntentRules.filter(
+    (rule) => hasAny(query, rule.match) && hasAny(originalNormalizedQuery, rule.accessories)
+  );
 
   const intents = [
     {
@@ -269,6 +294,11 @@ export function applyIntentRanking(hits: any[] = [], originalQuery: string, sear
       demote: ["manikin", "manikins", "training", "trainer", "simulator", "skin", "cpr", "torso"],
     },
     {
+      match: ["brancard", "brancards", "civiere", "civière", "stretchers", "stretcher", "scoop stretcher", "transport stretcher", "ambulance stretcher"],
+      prefer: ["stretcher", "stretchers", "scoop stretcher", "basket stretcher", "folding stretcher", "transport stretcher", "ambulance stretcher", "rescue stretcher", "litter"],
+      demote: ["dressing", "dressings", "bandage", "bandages", "wrap", "gauze", "tourniquet", "splint", "cold pack", "tape"],
+    },
+    {
       match: ["mannequin de cpr", "mannequin cpr", "mannequin de rcr", "mannequin rcr", "cpr manikin", "cpr manikins", "rcr"],
       prefer: ["ruth lee cpr manikin", "resusci anne", "cpr manikin", "cpr manikins", "cpr training manikin", "manikins", "nursing manikins", "medical training"],
       demote: ["valve", "adapter", "pads", "cartridge", "replacement", "injection site", "pericardiocentesis", "parts", "accessories", "plug belly", "plate", "skin", "arrhythmia simulator"],
@@ -287,6 +317,10 @@ export function applyIntentRanking(hits: any[] = [], originalQuery: string, sear
     const text = ` ${docText(hit)} `;
     let intentScore = 0;
     const textScore = Number(hit.text_match || hit._text_match || 0);
+    for (const rule of activeAccessoryRules) {
+      if (hasAnyWholeWord(text, rule.accessories)) intentScore += 35;
+      if (hasAny(text, rule.demoteMain) && !hasAnyWholeWord(text, rule.accessories)) intentScore -= 35;
+    }
     for (const intent of active) {
       if (intent.skipDemote) continue;
       if (hasAny(text, intent.prefer)) intentScore += 10;
