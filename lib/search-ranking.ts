@@ -140,6 +140,23 @@ function categoryPhraseScore(hit: any, originalQuery: string, searchQuery: strin
   return score;
 }
 
+function originalNamePhraseScore(nameText: string, originalQuery: string) {
+  const normalized = normalizeSearchText(originalQuery);
+  const tokens = normalized
+    .split(" ")
+    .map((token) => token.trim())
+    .filter((token) => token.length >= 2);
+
+  if (tokens.length < 2) return 0;
+  if (nameText.includes(` ${normalized} `)) return 760;
+
+  const matchingTokens = tokens.filter((token) => new RegExp(`(^|\\s)${token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(\\s|$)`).test(nameText));
+  if (matchingTokens.length === tokens.length) return 560;
+  if (tokens.length >= 3 && matchingTokens.length >= tokens.length - 1) return 260;
+  if (matchingTokens.length >= 2) return 90;
+  return 0;
+}
+
 function hasAny(text: string, terms: string[]) {
   return terms.some((term) => text.includes(normalizeSearchText(term)));
 }
@@ -757,6 +774,7 @@ export function applyIntentRanking(hits: any[] = [], originalQuery: string, sear
     const nameText = ` ${docNameText(hit)} `;
     const categoryText = ` ${docCategories(hit).join(" ")} `;
     let intentScore = categoryPhraseScore(hit, originalQuery, searchQuery);
+    intentScore += originalNamePhraseScore(nameText, originalQuery);
     const textScore = Number(hit.text_match || hit._text_match || 0);
     const isFirstAidKitQuery = hasAny(query, ["first aid kit", "first aid kits", "trousse de premiers soins", "trousses de premiers soins", "trousse de premiers secours", "trousses de premiers secours", "trousse premiers soins", "trousses premiers soins", "trousse premiers secours", "trousses premiers secours"]);
     if (isFirstAidKitQuery) {
