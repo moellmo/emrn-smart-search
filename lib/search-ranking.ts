@@ -113,7 +113,6 @@ const accessoryTerms = [
   "case",
   "bag",
   "cover",
-  "sign",
   "trainer",
   "training",
   "accessory",
@@ -158,6 +157,8 @@ const accessoryTerms = [
 const mainEquipmentDemote = [
   ...accessoryTerms,
   "manual",
+  "wall sign",
+  "signage",
   "quick reference",
   "reference card",
   "recording paper",
