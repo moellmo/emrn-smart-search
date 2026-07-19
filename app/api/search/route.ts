@@ -93,7 +93,7 @@ function categoryFamilyIdsForQuery(query: string, categories: BCCategory[]) {
   const words = normalized.split(/\s+/).filter((word) => word.length >= 3 && !genericWords.has(word));
   const phraseTerms = new Set<string>([normalized, singularize(normalized)]);
   const wordTerms = new Set<string>();
-  const wordsForWordMatch = words.length > 1 ? words.slice(-1) : words;
+  const wordsForWordMatch = words.length > 1 ? [] : words;
 
   for (let index = 0; index < words.length; index++) {
     for (const size of [2, 3]) {
@@ -142,6 +142,14 @@ function categoryFamilyIdsForQuery(query: string, categories: BCCategory[]) {
 
   matched.forEach(addBranch);
   return Array.from(ids).slice(0, 120);
+}
+
+function isShortCategoryStyleQuery(query: string) {
+  const normalized = normalizeSearchText(query);
+  const words = normalized.split(/\s+/).filter(Boolean);
+  if (!words.length || words.length > 2) return false;
+  const productWords = new Set(["test", "strip", "strips", "bandelette", "bandelettes", "contour", "accu", "chek", "model", "battery", "batteries"]);
+  return !words.some((word) => productWords.has(word));
 }
 
 function hitKey(hit: any) {
@@ -341,7 +349,7 @@ export async function GET(req: NextRequest) {
   if (priceMin && !Number.isNaN(Number(priceMin))) filters.push(`price:>=${Number(priceMin)}`);
   if (priceMax && !Number.isNaN(Number(priceMax))) filters.push(`price:<=${Number(priceMax)}`);
 
-  const selectedCategoryTranslatedQuery = categoryIds.length > 0 && smartQuery.language === "fr";
+  const selectedCategoryTranslatedQuery = categoryIds.length > 0 && smartQuery.language === "fr" && isShortCategoryStyleQuery(q);
   const primarySearchQuery = selectedCategoryTranslatedQuery ? "*" : smartQuery.search_query || "*";
 
   const results: any = await typesenseSearch
