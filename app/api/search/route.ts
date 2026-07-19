@@ -93,10 +93,9 @@ function categoryFamilyIdsForQuery(query: string, categories: BCCategory[]) {
   const words = normalized.split(/\s+/).filter((word) => word.length >= 3 && !genericWords.has(word));
   const phraseTerms = new Set<string>([normalized, singularize(normalized)]);
   const wordTerms = new Set<string>();
+  const wordsForWordMatch = words.length > 1 ? words.slice(-1) : words;
 
   for (let index = 0; index < words.length; index++) {
-    wordTerms.add(words[index]);
-    wordTerms.add(singularize(words[index]));
     for (const size of [2, 3]) {
       const phrase = words.slice(index, index + size).join(" ");
       if (phrase.split(" ").length === size) {
@@ -105,6 +104,10 @@ function categoryFamilyIdsForQuery(query: string, categories: BCCategory[]) {
       }
     }
   }
+  wordsForWordMatch.forEach((word) => {
+    wordTerms.add(word);
+    wordTerms.add(singularize(word));
+  });
 
   const byParent = new Map<number, BCCategory[]>();
   const matched = new Set<number>();
@@ -310,12 +313,18 @@ export async function GET(req: NextRequest) {
 
   const controls = await getEffectiveSearchOverrides();
   const smartQuery = await buildSmartSearchQuery(q);
+  const categoryRecallQueries = [
+    q,
+    ...(smartQuery.expansions || []),
+    ...(smartQuery.translated_query ? [smartQuery.translated_query] : []),
+    smartQuery.search_query,
+  ];
+  const searchCategories = !categoryIds.length && !category && q !== "*" ? await fetchSearchCategories() : [];
   const categoryFamilyIds =
     !categoryIds.length && !category && q !== "*"
       ? Array.from(
           new Set([
-            ...categoryFamilyIdsForQuery(q, await fetchSearchCategories()),
-            ...categoryFamilyIdsForQuery(smartQuery.search_query, await fetchSearchCategories()),
+            ...categoryRecallQueries.flatMap((query) => categoryFamilyIdsForQuery(query, searchCategories)),
           ])
         ).filter((id) => id !== AED_CATEGORY_ID)
       : [];
