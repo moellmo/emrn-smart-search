@@ -7,16 +7,29 @@ import { getEffectiveSearchOverrides, getPinnedSkusForQuery } from "../../../lib
 
 const COLLECTION_NAME = "emrn_products";
 const STORE_URL = process.env.EMRN_STORE_URL || "https://emrn.ca";
+const STORE_HASH = process.env.BIGCOMMERCE_STORE_HASH!;
+const ACCESS_TOKEN = process.env.BIGCOMMERCE_ACCESS_TOKEN!;
+const BIGCOMMERCE_API_BASE = `https://api.bigcommerce.com/stores/${STORE_HASH}/v3`;
 const AED_CATEGORY_ID = 160;
 const SEARCH_HIT_LIMIT = 10000;
 const MISSING_BRAND_LABEL = "No brand";
 const MISSING_SOLD_BY_LABEL = "No Sold By";
+const CATEGORY_CACHE_MS = 1000 * 60 * 10;
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type",
 };
+
+type BCCategory = {
+  id: number;
+  parent_id?: number;
+  name: string;
+  is_visible?: boolean;
+};
+
+let categoryCache: { expiresAt: number; categories: BCCategory[] } | null = null;
 
 function fixUrl(url: string | undefined) {
   if (!url) return STORE_URL;
@@ -40,6 +53,78 @@ function normalizeSort(sort: string | null) {
     default:
       return "_text_match:desc,popularity_score:desc,product_id:desc";
   }
+}
+
+async function fetchSearchCategories() {
+  if (categoryCache && categoryCache.expiresAt > Date.now()) return categoryCache.categories;
+
+  const all: BCCategory[] = [];
+  let page = 1;
+  let totalPages = 1;
+
+  do {
+    const res = await fetch(`${BIGCOMMERCE_API_BASE}/catalog/categories?limit=250&page=${page}`, {
+      headers: {
+        "X-Auth-Token": ACCESS_TOKEN,
+        Accept: "application/json",
+        "Content-Type": "application/json",
+      },
+      cache: "no-store",
+    });
+
+    if (!res.ok) throw new Error(`BigCommerce category API error ${res.status}: ${await res.text()}`);
+    const data = await res.json();
+    all.push(...(data.data || []));
+    totalPages = data.meta?.pagination?.total_pages || 1;
+    page++;
+  } while (page <= totalPages);
+
+  categoryCache = {
+    categories: all.filter((cat) => cat.is_visible !== false),
+    expiresAt: Date.now() + CATEGORY_CACHE_MS,
+  };
+
+  return categoryCache.categories;
+}
+
+function singularize(value: string) {
+  return value.endsWith("s") && value.length > 3 ? value.slice(0, -1) : value;
+}
+
+function categoryFamilyIdsForQuery(query: string, categories: BCCategory[]) {
+  const normalized = normalizeSearchText(query);
+  if (!normalized || normalized === "*" || normalized.length < 3 || /\d/.test(normalized)) return [];
+
+  const normalizedSingular = singularize(normalized);
+  const byParent = new Map<number, BCCategory[]>();
+  const matched = new Set<number>();
+  const ids = new Set<number>();
+
+  for (const category of categories) {
+    const parent = Number(category.parent_id || 0);
+    if (!byParent.has(parent)) byParent.set(parent, []);
+    byParent.get(parent)!.push(category);
+
+    const categoryName = normalizeSearchText(category.name);
+    const categorySingular = singularize(categoryName);
+    if (
+      categoryName === normalized ||
+      categorySingular === normalizedSingular ||
+      categoryName.includes(normalized) ||
+      categoryName.includes(normalizedSingular)
+    ) {
+      matched.add(Number(category.id));
+    }
+  }
+
+  function addBranch(id: number) {
+    if (!id || ids.has(id)) return;
+    ids.add(id);
+    for (const child of byParent.get(id) || []) addBranch(Number(child.id));
+  }
+
+  matched.forEach(addBranch);
+  return Array.from(ids).slice(0, 120);
 }
 
 function hitKey(hit: any) {
@@ -213,6 +298,10 @@ export async function GET(req: NextRequest) {
 
   const controls = await getEffectiveSearchOverrides();
   const smartQuery = await buildSmartSearchQuery(q);
+  const categoryFamilyIds =
+    !categoryIds.length && !category && q !== "*"
+      ? categoryFamilyIdsForQuery(q, await fetchSearchCategories()).filter((id) => id !== AED_CATEGORY_ID)
+      : [];
   const filters: string[] = ["is_visible:=true"];
 
   if (brand) filters.push(brand === MISSING_BRAND_LABEL ? `brand:=""` : `brand:=${JSON.stringify(brand)}`);
@@ -257,6 +346,25 @@ export async function GET(req: NextRequest) {
             q: "*",
             query_by: "sku,all_skus,name,parent_name,brand,categories,search_text",
             filter_by: [supplementalBase, `category_ids:=[${AED_CATEGORY_ID}]`].filter(Boolean).join(" && "),
+            facet_by: "brand,categories,sold_by,color,price,availability",
+            max_facet_values: 1000,
+            sort_by: normalizeSort(sort),
+            per_page: Math.min(requestedPerPage * 3, 100),
+            limit_hits: SEARCH_HIT_LIMIT,
+            page,
+          })
+      );
+    }
+
+    if (categoryFamilyIds.length) {
+      supplementalSearches.push(
+        typesenseSearch
+          .collections(COLLECTION_NAME)
+          .documents()
+          .search({
+            q: "*",
+            query_by: "sku,all_skus,name,parent_name,brand,categories,search_text",
+            filter_by: [supplementalBase, `category_ids:=[${categoryFamilyIds.join(",")}]`].filter(Boolean).join(" && "),
             facet_by: "brand,categories,sold_by,color,price,availability",
             max_facet_values: 1000,
             sort_by: normalizeSort(sort),
@@ -314,6 +422,10 @@ export async function GET(req: NextRequest) {
     if (fulfilledSupplementalResults.length) {
       results.facet_counts = ["brand", "categories", "sold_by", "color", "price", "availability"].map((field) =>
         mergeFacetCounts(field, results, ...fulfilledSupplementalResults)
+      );
+      results.found = Math.max(
+        Number(results.found || 0),
+        ...fulfilledSupplementalResults.map((result) => Number(result?.found || 0))
       );
     }
     addMissingSingleValueFacetBuckets(results);
