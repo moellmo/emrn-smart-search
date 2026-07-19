@@ -529,8 +529,12 @@ export function applyIntentRanking(hits: any[] = [], originalQuery: string, sear
     const textScore = Number(hit.text_match || hit._text_match || 0);
     const isMedicalBagQuery = hasAny(query, ["medical bag", "medical bags", "medic bag", "medic bags", "trauma bag", "trauma bags", "ems bag", "emt bag", "first aid bag", "first aid bags", "jump bag", "jump bags", "rescue bag", "rescue bags"]);
     if (isMedicalBagQuery) {
-      if (categoryText.includes(" medical bags ") || hasAny(nameText, bagIntentTerms)) intentScore += 140;
-      if (!categoryText.includes(" medical bags ") && hasAny(nameText, bagDemoteTerms)) intentScore -= 130;
+      const inMedicalBags = categoryText.includes(" medical bags ");
+      const namedLikeBag = hasAny(nameText, bagIntentTerms);
+      if (inMedicalBags) intentScore += 220;
+      else if (namedLikeBag) intentScore += 120;
+      else intentScore -= 120;
+      if (!inMedicalBags && hasAny(nameText, bagDemoteTerms)) intentScore -= 150;
     }
     const isPatientMonitorQuery = hasAny(query, ["patient monitor", "patient monitors", "patient monitoring", "vital signs monitor", "vital sign monitor", "vitals monitor", "moniteur patient", "moniteur de patient", "moniteur de signes vitaux"]);
     if (isPatientMonitorQuery) {
