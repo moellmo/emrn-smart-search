@@ -173,6 +173,31 @@ function mergeHits(...groups: any[][]) {
   return merged;
 }
 
+function isPatientMonitorFamilyQuery(originalQuery: string, searchQuery: string) {
+  const query = normalizeSearchText(String(originalQuery || "") + " " + String(searchQuery || ""));
+  return ["patient monitor", "patient monitors", "vital signs monitor", "vital sign monitor", "bedside monitor", "multi parameter monitor", "multi-parameter monitor", "moniteur patient", "moniteur de signes vitaux"].some((term) => query.includes(normalizeSearchText(term)));
+}
+
+function prioritizePatientMonitorUnits(hits: any[] = [], originalQuery: string, searchQuery: string) {
+  if (!isPatientMonitorFamilyQuery(originalQuery, searchQuery)) return hits;
+  const accessoryTerms = ["accessory", "accessories", "cuff", "cuffs", "electrode", "electrodes", "leadwire", "lead wire", "paper", "alarm", "mount", "bracket", "stand", "station", "stations", "tube", "tubing", "hose", "sensor", "probe"];
+  const unitTerms = ["patient monitor", "vital signs monitor", "vital sign monitor", "bedside monitor", "spot monitor", "multiparameter monitor", "multi-parameter monitor", "edan x10", "edan x12", "edan im3", "im50 patient monitor", "im60 patient monitor", "m3 vital signs", "m3a vital signs", "connex spot", "spot vital sign", "fetal monitor", "pulse oximeter", "co-oximeter", "holter"];
+  const score = (hit: any) => {
+    const doc = hit.document || {};
+    const name = normalizeSearchText([doc.name, doc.parent_name, doc.variant_label, doc.option_text].filter(Boolean).join(" "));
+    const categories = normalizeSearchText(Array.isArray(doc.categories) ? doc.categories.join(" ") : String(doc.categories || ""));
+    const hasAccessory = accessoryTerms.some((term) => name.includes(normalizeSearchText(term)));
+    const hasUnit = unitTerms.some((term) => name.includes(normalizeSearchText(term)));
+    let value = 0;
+    if (hasUnit && !hasAccessory) value += 1000;
+    if (categories.includes("vital sign monitors") || categories.includes("patient monitors")) value += 100;
+    if (hasAccessory) value -= 600;
+    if (categories.includes("veterinary")) value -= 300;
+    return value;
+  };
+  return [...hits].sort((a, b) => score(b) - score(a));
+}
+
 function isAedUnitQuery(query: string) {
   const normalized = normalizeSearchText(query);
   if (!normalized || normalized === "*") return false;
@@ -459,7 +484,7 @@ export async function GET(req: NextRequest) {
       .map((item) => item.result);
     const supplementalHits = fulfilledSupplementalResults.flatMap((result) => result?.hits || []);
 
-    const filteredHits = applyPinnedSkuRanking(
+    const rankedHits = applyPinnedSkuRanking(
       applyBrandQueryRanking(
         applyIntentRanking(
           applyPrivateCategoryFilter(applyHiddenSkuFilter(mergeHits(supplementalHits, results.hits), controls), customerId, controls),
@@ -471,6 +496,7 @@ export async function GET(req: NextRequest) {
       q,
       controls
     );
+    const filteredHits = prioritizePatientMonitorUnits(rankedHits, q, smartQuery.search_query);
 
     if (fulfilledSupplementalResults.length) {
       const facetBase =
