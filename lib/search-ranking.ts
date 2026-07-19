@@ -488,6 +488,69 @@ const manikinUnitTerms = [
   "little anne",
   "ruth lee",
   "ferno rescue emergency dummy",
+  "little baby qcpr",
+  "little family qcpr",
+  "little junior qcpr",
+  "little anne qcpr",
+];
+
+const qcprUnitTerms = [
+  "little baby qcpr",
+  "little family qcpr",
+  "little junior qcpr",
+  "little anne qcpr",
+  "little baby",
+  "little family",
+  "little junior",
+  "little anne",
+  "qcpr manikin",
+  "qcpr manikins",
+  "cpr manikin",
+  "cpr manikins",
+  "cpr training manikin",
+  "resusci anne qcpr",
+  "laerdal qcpr",
+];
+
+const qcprAccessoryDemoteTerms = [
+  "accessory",
+  "accessories",
+  "parts",
+  "part",
+  "foreign object",
+  "foreign objects",
+  "skin",
+  "skins",
+  "face skin",
+  "faces",
+  "face",
+  "limb",
+  "limbs",
+  "arm",
+  "arms",
+  "leg",
+  "legs",
+  "case",
+  "carry case",
+  "carrying case",
+  "bag",
+  "bags",
+  "replacement",
+  "replaceable",
+  "valve",
+  "filter",
+  "adapter",
+  "connectors",
+  "connector",
+  "airway",
+  "airways",
+  "lung",
+  "lungs",
+  "spring",
+  "reflector",
+  "skillguide",
+  "skill guide",
+  "upgrade kit",
 ];
 
 const manikinAccessoryDemoteTerms = [
@@ -802,6 +865,13 @@ export function applyIntentRanking(hits: any[] = [], originalQuery: string, sear
       demoteStrong: ["accessory", "accessories", "restraint", "restraints", "strap", "straps", "harness", "mount", "wall mount", "ambulance wall mount", "wheel cup", "handle assembly", "assembly kit", "replacement", "replacement part", "mattress", "bolster", "holder", "iv pole", "platform", "instrument platform"],
     },
     {
+      match: ["qcpr", "q cpr", "little baby qcpr", "little family qcpr", "little junior qcpr", "little anne qcpr"],
+      prefer: qcprUnitTerms,
+      preferStrong: ["little baby qcpr", "little family qcpr", "little junior qcpr", "little anne qcpr", "qcpr manikin", "laerdal qcpr"],
+      demote: qcprAccessoryDemoteTerms,
+      demoteStrong: qcprAccessoryDemoteTerms,
+    },
+    {
       match: ["mannequin de cpr", "mannequin cpr", "mannequin de rcr", "mannequin rcr", "cpr manikin", "cpr manikins", "rcr"],
       prefer: ["ruth lee cpr manikin", "resusci anne", "cpr manikin", "cpr manikins", "cpr training manikin", "manikins", "nursing manikins", "medical training"],
       demote: ["valve", "adapter", "pads", "cartridge", "replacement", "injection site", "pericardiocentesis", "parts", "accessories", "plug belly", "plate", "skin", "arrhythmia simulator"],
@@ -903,7 +973,16 @@ export function applyIntentRanking(hits: any[] = [], originalQuery: string, sear
       else if (hasAny(nameText, patientMonitorUnitTerms)) intentScore += 90;
       if (monitorAccessoryName || hasAny(nameText, patientMonitorDemoteTerms)) intentScore -= 320;
     }
-    const isManikinQuery = hasAny(query, ["dummy", "dummies", "manikin", "manikins", "mannequin", "mannequins", "training manikin", "patient simulator"]);
+    const isQcprQuery = hasAny(query, ["qcpr", "q cpr"]);
+    const isQcprPartsQuery = hasAny(originalNormalizedQuery, ["accessory", "accessories", "part", "parts", "foreign object", "foreign objects", "skin", "face", "case", "limb", "limbs", "arm", "arms", "leg", "legs", "valve", "filter"]);
+    if (isQcprQuery && !isQcprPartsQuery) {
+      const nameLooksLikeQcprUnit = hasAny(nameText, qcprUnitTerms);
+      const nameLooksLikeQcprAccessory = hasAny(nameText, qcprAccessoryDemoteTerms);
+      if (nameLooksLikeQcprUnit && !nameLooksLikeQcprAccessory) intentScore += 520;
+      else if (nameLooksLikeQcprUnit) intentScore += 160;
+      if (nameLooksLikeQcprAccessory) intentScore -= 520;
+    }
+    const isManikinQuery = hasAny(query, ["dummy", "dummies", "manikin", "manikins", "mannequin", "mannequins", "training manikin", "patient simulator", "qcpr", "q cpr"]);
     if (isManikinQuery) {
       const nameLooksLikeUnit = hasAny(nameText, manikinUnitTerms);
       const nameLooksLikeAccessory = hasAny(nameText, manikinAccessoryDemoteTerms);

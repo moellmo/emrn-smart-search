@@ -181,8 +181,8 @@ function autocompleteRecallQueries(originalQuery: string, translatedQuery: strin
   if (includesAny(query, ["ceinture", "ceintures", "belt", "belts"])) {
     add("gait belt", "transfer belt", "safety belt", "stretcher belt", "belt");
   }
-  if (includesAny(query, ["little family qcpr", "little family", "little junior qcpr", "little junior"])) {
-    add(originalQuery, "little family qcpr", "little junior qcpr", "qcpr manikin");
+  if (includesAny(query, ["qcpr", "q cpr", "little baby", "little family", "little junior", "little anne", "baby qcpr", "family qcpr", "junior qcpr"])) {
+    add(originalQuery, "little baby qcpr", "little family qcpr", "little junior qcpr", "little anne qcpr", "qcpr manikin");
   }
   if (includesAny(query, ["cpr mask", "cpr masks", "masque rcr", "masques rcr", "rcr mask", "rcr masks"])) {
     add("cpr pocket mask", "pocket mask", "cpr mask", "face shield");
