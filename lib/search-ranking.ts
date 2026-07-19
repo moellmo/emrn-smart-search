@@ -312,7 +312,18 @@ const bagIntentTerms = [
   "trauma bag",
   "trauma bags",
   "ems bag",
+  "ems bags",
   "emt bag",
+  "emt bags",
+  "medical backpack",
+  "medical backpacks",
+  "ems backpack",
+  "ems backpacks",
+  "trauma backpack",
+  "trauma backpacks",
+  "medpac",
+  "statpack",
+  "statpacks",
   "first aid bag",
   "first aid bags",
   "jump bag",
@@ -330,6 +341,10 @@ const bagIntentTerms = [
 const bagDemoteTerms = [
   "sick bag",
   "emesis bag",
+  "emesis bags",
+  "amniotic sac",
+  "amniotic sacs",
+  "simulated amniotic",
   "plastic bag",
   "bio bag",
   "bio bags",
@@ -348,6 +363,7 @@ const bagDemoteTerms = [
   "bottle",
   "prep pad",
   "alcohol prep",
+  "first aid kit pouch",
   "pad sterile",
 ];
 
@@ -999,10 +1015,19 @@ export function applyIntentRanking(hits: any[] = [], originalQuery: string, sear
     if (isMedicalBagQuery) {
       const inMedicalBags = categoryText.includes(" medical bags ");
       const namedLikeBag = hasAny(nameText, bagIntentTerms);
-      if (inMedicalBags) intentScore += 220;
+      const namedCoreBag = hasAny(nameText, [
+        "medical bag", "medical bags", "medic bag", "medic bags", "trauma bag", "trauma bags",
+        "ems bag", "ems bags", "emt bag", "emt bags", "jump bag", "jump bags", "rescue bag", "rescue bags",
+        "medical backpack", "medical backpacks", "ems backpack", "ems backpacks", "trauma backpack", "trauma backpacks",
+        "medpac", "statpack", "statpacks",
+      ]);
+      const namedWeakContainer = hasAny(nameText, ["pouch", "pouches", "case", "cases", "pack", "packs"]);
+      if (namedCoreBag) intentScore += 520;
+      else if (inMedicalBags) intentScore += 220;
       else if (namedLikeBag) intentScore += 120;
       else intentScore -= 500;
-      if (!inMedicalBags && hasAny(nameText, bagDemoteTerms)) intentScore -= 150;
+      if (namedWeakContainer && !namedCoreBag && !inMedicalBags) intentScore -= 220;
+      if (hasAny(nameText, bagDemoteTerms)) intentScore -= 420;
     }
     const isPatientMonitorQuery = hasAny(query, ["patient monitor", "patient monitors", "patient monitoring", "vital signs monitor", "vital sign monitor", "vitals monitor", "moniteur patient", "moniteur de patient", "moniteur de signes vitaux"]);
     if (isPatientMonitorQuery) {
