@@ -98,6 +98,38 @@ function docText(hit: any) {
   ].filter(Boolean).join(" "));
 }
 
+function docCategories(hit: any) {
+  const categories = hit.document?.categories;
+  const values = Array.isArray(categories) ? categories : [categories];
+  return values.map((value) => normalizeSearchText(String(value || ""))).filter(Boolean);
+}
+
+function singularCategoryPhrase(value: string) {
+  return value.endsWith("s") && value.length > 3 ? value.slice(0, -1) : value;
+}
+
+function categoryPhraseScore(hit: any, originalQuery: string, searchQuery: string) {
+  const queries = Array.from(
+    new Set(
+      [originalQuery, searchQuery]
+        .map((value) => normalizeSearchText(value))
+        .filter((value) => value && value !== "*" && value.length >= 3)
+    )
+  );
+  if (!queries.length) return 0;
+
+  let score = 0;
+  for (const category of docCategories(hit)) {
+    const categorySingular = singularCategoryPhrase(category);
+    for (const query of queries) {
+      const querySingular = singularCategoryPhrase(query);
+      if (category === query || categorySingular === querySingular) score = Math.max(score, 95);
+      else if (query.length >= 5 && (category.includes(query) || query.includes(category) || categorySingular.includes(querySingular) || querySingular.includes(categorySingular))) score = Math.max(score, 55);
+    }
+  }
+  return score;
+}
+
 function hasAny(text: string, terms: string[]) {
   return terms.some((term) => text.includes(normalizeSearchText(term)));
 }
@@ -305,6 +337,12 @@ const patientMonitorDemoteTerms = [
   "bracket",
   "paper",
   "recording paper",
+  "electrode",
+  "electrodes",
+  "monitoring electrode",
+  "diagnostic electrode",
+  "resting ekg diagnostic electrode",
+  "red dot",
 ];
 
 const accessoryIntentRules = [
@@ -418,11 +456,10 @@ export function applyIntentRanking(hits: any[] = [], originalQuery: string, sear
   ];
 
   const active = intents.filter((intent) => hasAny(query, intent.match));
-  if (!active.length) return hits;
 
   const scoreHit = (hit: any) => {
     const text = ` ${docText(hit)} `;
-    let intentScore = 0;
+    let intentScore = categoryPhraseScore(hit, originalQuery, searchQuery);
     const textScore = Number(hit.text_match || hit._text_match || 0);
     for (const rule of activeAccessoryRules) {
       if (hasAnyWholeWord(text, rule.accessories)) intentScore += 35;
@@ -432,7 +469,7 @@ export function applyIntentRanking(hits: any[] = [], originalQuery: string, sear
       if (intent.skipDemote) continue;
       if ("preferStrong" in intent && intent.preferStrong && hasAny(text, intent.preferStrong)) intentScore += 35;
       if (hasAny(text, intent.prefer)) intentScore += 10;
-      if ("demoteStrong" in intent && intent.demoteStrong && hasAny(text, intent.demoteStrong)) intentScore -= 45;
+      if ("demoteStrong" in intent && intent.demoteStrong && hasAny(text, intent.demoteStrong)) intentScore -= 80;
       if (hasAny(text, intent.demote)) intentScore -= 20;
     }
     return { intentScore, textScore };
