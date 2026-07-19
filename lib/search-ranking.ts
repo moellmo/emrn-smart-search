@@ -179,6 +179,72 @@ const mainEquipmentDemote = [
   "consumables",
 ];
 
+const stretcherUnitTerms = [
+  "ambulance cot",
+  "transport cot",
+  "emergency cot",
+  "proflexx ambulance cot",
+  "ambulance stretcher",
+  "transport stretcher",
+  "scoop stretcher",
+  "basket stretcher",
+  "folding stretcher",
+  "rescue stretcher",
+  "pole stretcher",
+  "portable stretcher",
+  "evacuation stretcher",
+  "stretcher",
+  "stretchers",
+  "litter",
+  "35x-nm",
+  "35x nm",
+  "35x proflexx",
+];
+
+const stretcherAccessoryDemote = [
+  ...accessoryTerms,
+  "accessory",
+  "accessories",
+  "restraint",
+  "restraints",
+  "strap",
+  "straps",
+  "harness",
+  "mount",
+  "wall mount",
+  "ambulance wall mount",
+  "wheel cup",
+  "wheel cups",
+  "cup",
+  "cups",
+  "handle",
+  "handles",
+  "handle assembly",
+  "assembly kit",
+  "kit",
+  "replacement",
+  "replacement part",
+  "mattress",
+  "bolster",
+  "holder",
+  "iv pole",
+  "pole holder",
+  "platform",
+  "instrument platform",
+  "fastener",
+  "fastening",
+  "dressing",
+  "dressings",
+  "bandage",
+  "bandages",
+  "wrap",
+  "gauze",
+  "tourniquet",
+  "splint",
+  "cold pack",
+  "tape",
+];
+
 const accessoryIntentRules = [
   {
     match: ["aed", "defib", "defibrillator", "defibrillators", "defibrillateur", "défibrillateur", "dea"],
@@ -295,8 +361,10 @@ export function applyIntentRanking(hits: any[] = [], originalQuery: string, sear
     },
     {
       match: ["brancard", "brancards", "civiere", "civière", "stretchers", "stretcher", "scoop stretcher", "transport stretcher", "ambulance stretcher"],
-      prefer: ["stretcher", "stretchers", "scoop stretcher", "basket stretcher", "folding stretcher", "transport stretcher", "ambulance stretcher", "rescue stretcher", "litter"],
-      demote: ["dressing", "dressings", "bandage", "bandages", "wrap", "gauze", "tourniquet", "splint", "cold pack", "tape"],
+      prefer: stretcherUnitTerms,
+      preferStrong: ["ambulance cot", "proflexx ambulance cot", "35x-nm", "35x nm", "35x proflexx", "scoop stretcher", "basket stretcher", "folding stretcher", "transport stretcher", "ambulance stretcher", "rescue stretcher"],
+      demote: stretcherAccessoryDemote,
+      demoteStrong: ["accessory", "accessories", "restraint", "restraints", "strap", "straps", "harness", "mount", "wall mount", "ambulance wall mount", "wheel cup", "handle assembly", "assembly kit", "replacement", "replacement part", "mattress", "bolster", "holder", "iv pole", "platform", "instrument platform"],
     },
     {
       match: ["mannequin de cpr", "mannequin cpr", "mannequin de rcr", "mannequin rcr", "cpr manikin", "cpr manikins", "rcr"],
@@ -323,7 +391,9 @@ export function applyIntentRanking(hits: any[] = [], originalQuery: string, sear
     }
     for (const intent of active) {
       if (intent.skipDemote) continue;
+      if ("preferStrong" in intent && intent.preferStrong && hasAny(text, intent.preferStrong)) intentScore += 35;
       if (hasAny(text, intent.prefer)) intentScore += 10;
+      if ("demoteStrong" in intent && intent.demoteStrong && hasAny(text, intent.demoteStrong)) intentScore -= 45;
       if (hasAny(text, intent.demote)) intentScore -= 20;
     }
     return { intentScore, textScore };
