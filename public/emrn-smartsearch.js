@@ -255,6 +255,7 @@
   function goToFullCategoryId(id){const url=new URL(config.searchResultsUrl,window.location.origin);url.searchParams.set("search_query","*");url.searchParams.set(config.resultsParam,"1");url.searchParams.set("category_id",id);window.location.href=url.toString()}
 
   async function loadCategoryTree(){if(categoryTreeCache)return categoryTreeCache;try{const params=appendCustomerParam(new URLSearchParams());const query=params.toString();const res=await fetch(`${config.apiBase}/api/category-tree${query?`?${query}`:""}`,{mode:"cors"});const data=await res.json();const cats=data.categories||[];const byParent=new Map();cats.forEach(cat=>{const parent=Number(cat.parent_id||0);cat.product_count=Number(cat.product_count||cat.count||0);if(!byParent.has(parent))byParent.set(parent,[]);byParent.get(parent).push(cat)});categoryTreeCache={cats,byParent};return categoryTreeCache}catch(err){console.error("[EMRN SmartSearch] category tree error",err);return {cats:[],byParent:new Map()}}}
+  function categoryBranchIds(categoryId){const id=Number(categoryId||0);if(!id)return[];const ids=[];const visit=(nextId)=>{if(!nextId||ids.includes(Number(nextId)))return;ids.push(Number(nextId));(categoryTreeCache?.byParent.get(Number(nextId))||[]).forEach(child=>visit(child.id))};visit(id);return ids}
   function buildRelevantCategoryHelpers(categoryFacetCounts=[],selectedId=0,selectedName="",useScopedCounts=false){
     const countByName=new Map((categoryFacetCounts||[]).map(item=>[String(item.value||"").toLowerCase(),Number(item.count||0)]));
     const catalogCountByName=new Map((categoryTreeCache?.cats||[]).map(cat=>[String(cat.name||"").toLowerCase(),Number(cat.product_count||0)]));
@@ -311,7 +312,9 @@
 
   function renderCategoryTree(selectedId,selectedName="",categoryFacetCounts=[]){
     const params=new URLSearchParams(window.location.search);
-    const useScopedCounts=Boolean(params.get("brand")||params.get("sold_by")||params.get("color")||shouldReplaceBrand&&configuredBrandName);
+    const q=String(params.get("search_query")||params.get("q")||"").trim();
+    const isTypedSearch=Boolean(q&&q!=="*");
+    const useScopedCounts=Boolean(isTypedSearch||selectedId||selectedName||params.get("brand")||params.get("sold_by")||params.get("color")||shouldReplaceBrand&&configuredBrandName);
     const helpers=buildRelevantCategoryHelpers(categoryFacetCounts,selectedId,selectedName,useScopedCounts);
     const tree=renderCategoryBranch(0,0,selectedId,selectedName,helpers);
     if(!tree)return "";
@@ -344,7 +347,7 @@
   function facetGroup(title,items,type){if(!items||!items.length)return"";const current=currentValueForFilter(type);return `<div class="emrn-smart-filter-group"><h3>${escapeHtml(title)}</h3><div class="emrn-smart-facet-list">${items.slice(0,20).filter(item=>item&&item.value).map((item)=>{const active=String(item.value)===String(current);return `<button type="button" class="emrn-smart-facet ${active?"active":""}" data-filter-type="${type}" data-filter-value="${escapeHtml(item.value)}"><span class="emrn-smart-facet-name">${escapeHtml(item.value)}</span><span class="emrn-smart-facet-count">${item.count}</span></button>`}).join("")}</div></div>`}
   function priceStats(priceFacet,products){const prices=(products||[]).map(p=>Number(p.price||0)).filter(p=>p>0);const stats=priceFacet?.stats||{};return {min:Math.floor(Number(stats.min||Math.min(...prices,0)||0)),max:Math.ceil(Number(stats.max||Math.max(...prices,0)||0))}}
   function priceFilter(priceFacet,products,priceMin="",priceMax=""){const stats=priceStats(priceFacet,products);if(!stats.max)return"";const currentMax=Number(priceMax||stats.max);return `<div class="emrn-smart-filter-group emrn-smart-price-filter"><h3>Price</h3><div class="emrn-smart-price-fields"><label>Min <input type="number" min="0" step="1" value="${escapeHtml(priceMin)}" placeholder="${stats.min}" data-price-min></label><label>Max <input type="number" min="0" step="1" value="${escapeHtml(priceMax)}" placeholder="${stats.max}" data-price-max></label></div><input type="range" min="${stats.min}" max="${stats.max}" value="${Math.min(Math.max(currentMax,stats.min),stats.max)}" data-price-range><button type="button" class="emrn-smart-apply-price" data-apply-price>Apply price</button></div>`}
-  function sortSelect(currentSort="popularity"){const options=[["popularity","Most bought"],["price_asc","Price: low to high"],["price_desc","Price: high to low"],["name_asc","Name: A to Z"],["name_desc","Name: Z to A"],["newest","Newest"]];return `<div class="emrn-smart-results-controls"><label for="emrn-smart-sort">Sort</label><select id="emrn-smart-sort" class="emrn-smart-sort-select" data-smart-sort>${options.map(([value,label])=>`<option value="${value}" ${String(currentSort||"popularity")===value?"selected":""}>${label}</option>`).join("")}</select></div>`}
+  function sortSelect(currentSort="popularity"){const options=[["popularity","Frequently purchased"],["price_asc","Price: low to high"],["price_desc","Price: high to low"],["name_asc","Name: A to Z"],["name_desc","Name: Z to A"],["newest","Newest"]];return `<div class="emrn-smart-results-controls"><label for="emrn-smart-sort">Sort</label><select id="emrn-smart-sort" class="emrn-smart-sort-select" data-smart-sort>${options.map(([value,label])=>`<option value="${value}" ${String(currentSort||"popularity")===value?"selected":""}>${label}</option>`).join("")}</select></div>`}
   function categoryByName(categoryName){const lower=String(categoryName||"").toLowerCase();return (categoryTreeCache?.cats||[]).find((cat)=>String(cat.name||"").toLowerCase()===lower)}
   function categoryBubbleImage(categoryName){const category=categoryByName(categoryName);return category?.image||""}
   function relatedCategoryBubbles(categoryFacet,products,selectedCategory=""){const items=(categoryFacet||[]).filter((item)=>item&&item.value&&String(item.value).toLowerCase()!==String(selectedCategory||"").toLowerCase()).slice(0,8);if(!items.length)return"";return `<div class="emrn-smart-related-cats" aria-label="${escapeHtml(t("categories"))}">${items.map((item)=>{const image=categoryBubbleImage(item.value,products);const category=categoryByName(item.value);const attrs=category?.id?`data-full-category-id="${escapeHtml(category.id)}"`:(category?.url?`data-category-url="${escapeHtml(normalizeUrl(category.url))}"`:`data-filter-type="category" data-filter-value="${escapeHtml(item.value)}"`);return `<button type="button" class="emrn-smart-related-cat" ${attrs}>${image?`<span class="emrn-smart-related-cat-img"><img src="${escapeHtml(image)}" alt=""></span>`:`<span class="emrn-smart-related-cat-img"></span>`}<span>${escapeHtml(item.value)}</span></button>`}).join("")}</div>`}
@@ -370,8 +373,8 @@
     apiParams.set("q",q||"*");
     apiParams.set("page",String(page));
     if(brand)apiParams.set("brand",brand);
-    if(category)apiParams.set("category",category);
-    if(categoryId)apiParams.set("category_id",String(categoryId));
+    if(category&&!categoryId)apiParams.set("category",category);
+    if(categoryId){apiParams.set("category_id",String(categoryId));const branchIds=categoryBranchIds(categoryId);if(branchIds.length>1)apiParams.set("category_ids",branchIds.join(","))}
     if(soldBy)apiParams.set("sold_by",soldBy);
     if(color)apiParams.set("color",color);
     if(priceMin)apiParams.set("price_min",priceMin);
@@ -441,8 +444,8 @@
     markSmartReady();
     const categoryTreePromise=loadCategoryTree();
     try{
-      const data=await fetchSearchPage(1);
       await categoryTreePromise;
+      const data=await fetchSearchPage(1);
       title=listingTitle(q,brand,category,categoryId);
       const products=(data.hits||[]).map((hit)=>hit.document);
       const found=Number(data.found||products.length||0);

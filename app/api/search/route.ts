@@ -85,6 +85,17 @@ function isLikelyBrandQuery(query: string) {
   return words.length <= 3 && normalized.length <= 40 && /^[a-z0-9 &.'+-]+$/.test(normalized);
 }
 
+function cleanCategoryIds(value: string | null) {
+  return Array.from(
+    new Set(
+      String(value || "")
+        .split(",")
+        .map((id) => Number(id.trim()))
+        .filter((id) => Number.isInteger(id) && id > 0)
+    )
+  ).slice(0, 80);
+}
+
 function facetCountsFromHits(hits: any[] = [], field: string, limit = 80) {
   const counts = new Map<string, number>();
   const numericValues: number[] = [];
@@ -135,6 +146,7 @@ export async function GET(req: NextRequest) {
   const brand = searchParams.get("brand");
   const category = searchParams.get("category");
   const categoryId = searchParams.get("category_id");
+  const categoryIds = cleanCategoryIds(searchParams.get("category_ids") || categoryId);
   const availability = searchParams.get("availability");
   const soldBy = searchParams.get("sold_by");
   const color = searchParams.get("color");
@@ -149,8 +161,8 @@ export async function GET(req: NextRequest) {
   const filters: string[] = ["is_visible:=true"];
 
   if (brand) filters.push(`brand:=${JSON.stringify(brand)}`);
-  if (category) filters.push(`categories:=${JSON.stringify(category)}`);
-  if (categoryId && Number(categoryId) > 0) filters.push(`category_ids:=[${Number(categoryId)}]`);
+  if (category && !categoryIds.length) filters.push(`categories:=${JSON.stringify(category)}`);
+  if (categoryIds.length) filters.push(`category_ids:=[${categoryIds.join(",")}]`);
   if (availability) filters.push(`availability:=${JSON.stringify(availability)}`);
   if (soldBy) filters.push(`sold_by:=${JSON.stringify(soldBy)}`);
   if (color) filters.push(`color:=${JSON.stringify(color)}`);
@@ -167,7 +179,7 @@ export async function GET(req: NextRequest) {
       query_by_weights: "30,24,16,12,8,7,7,6,6,4,2,2",
       filter_by: filters.join(" && "),
       facet_by: "brand,categories,sold_by,color,price,availability",
-      max_facet_values: 80,
+      max_facet_values: 1000,
       sort_by: normalizeSort(sort),
       per_page: Math.min(requestedPerPage * 3, 100),
       page,
@@ -180,7 +192,7 @@ export async function GET(req: NextRequest) {
     const supplementalSearches: Promise<any>[] = [];
     const supplementalBase = filters.join(" && ");
 
-    if (isAedUnitQuery(q) && !category && !(categoryId && Number(categoryId) > 0)) {
+    if (isAedUnitQuery(q) && !category && !categoryIds.length) {
       supplementalSearches.push(
         typesenseSearch
           .collections(COLLECTION_NAME)
@@ -190,7 +202,7 @@ export async function GET(req: NextRequest) {
             query_by: "sku,all_skus,name,parent_name,brand,categories,search_text",
             filter_by: [supplementalBase, `category_ids:=[${AED_CATEGORY_ID}]`].filter(Boolean).join(" && "),
             facet_by: "brand,categories,sold_by,color,price,availability",
-            max_facet_values: 80,
+            max_facet_values: 1000,
             sort_by: normalizeSort(sort),
             per_page: Math.min(requestedPerPage * 3, 100),
             page,
@@ -209,7 +221,7 @@ export async function GET(req: NextRequest) {
             query_by_weights: "10",
             filter_by: supplementalBase,
             facet_by: "brand,categories,sold_by,color,price,availability",
-            max_facet_values: 80,
+            max_facet_values: 1000,
             sort_by: normalizeSort(sort),
             per_page: Math.min(requestedPerPage * 3, 100),
             page,
