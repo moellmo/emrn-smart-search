@@ -1040,9 +1040,9 @@ export function applyIntentRanking(hits: any[] = [], originalQuery: string, sear
         "multiparameter monitor", "multi-parameter monitor", "multi parameter monitor", "fetal monitor", "maternal monitor",
         "edan ix series monitors", "monitors with touchscreen", "m3 vital signs", "m3a vital signs", "im3s edan", "edan im3", "edan im60", "edan x12", "connex spot", "spot vital sign", "holter", "fetal monitor", "co-oximeter", "pulse oximeter",
       ]);
-      if (monitorUnitName && !monitorAccessoryName) intentScore += 260;
-      else if (hasAny(nameText, patientMonitorUnitTerms)) intentScore += 90;
-      if (monitorAccessoryName || hasAny(nameText, patientMonitorDemoteTerms)) intentScore -= 320;
+      if (monitorUnitName && !monitorAccessoryName) intentScore += 520;
+      else if (hasAny(nameText, patientMonitorUnitTerms)) intentScore += 180;
+      if (monitorAccessoryName || hasAny(nameText, patientMonitorDemoteTerms)) intentScore -= 620;
     }
     const isQcprQuery = hasAny(query, ["qcpr", "q cpr"]);
     const isQcprPartsQuery = hasAny(originalNormalizedQuery, ["accessory", "accessories", "part", "parts", "foreign object", "foreign objects", "skin", "face", "case", "limb", "limbs", "arm", "arms", "leg", "legs", "valve", "filter"]);
