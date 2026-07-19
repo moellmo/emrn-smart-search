@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { typesenseSearch } from "../../../lib/typesense";
 import { buildSmartSearchQuery } from "../../../lib/smart-search-translator";
-import { applyHiddenSkuFilter, applyPinnedSkuRanking } from "../../../lib/search-ranking";
+import { applyHiddenSkuFilter, applyIntentRanking, applyPinnedSkuRanking, applyPrivateCategoryFilter } from "../../../lib/search-ranking";
 import { getEffectiveSearchOverrides } from "../../../lib/search-overrides";
 
 const COLLECTION_NAME = "emrn_products";
@@ -34,6 +34,26 @@ function categoryUrlMapFromHits(hits: any[] = []) {
   return map;
 }
 
+function facetCountsFromHits(hits: any[] = [], field: "brand" | "categories", limit = 10) {
+  const counts = new Map<string, number>();
+
+  for (const hit of hits) {
+    const value = hit.document?.[field];
+    const values = Array.isArray(value) ? value : [value];
+
+    for (const item of values) {
+      const clean = String(item || "").trim();
+      if (!clean) continue;
+      counts.set(clean, (counts.get(clean) || 0) + 1);
+    }
+  }
+
+  return Array.from(counts.entries())
+    .map(([value, count]) => ({ value, count }))
+    .sort((a, b) => b.count - a.count || a.value.localeCompare(b.value))
+    .slice(0, limit);
+}
+
 function normalizeHit(doc: any) {
   return {
     id: doc.id,
@@ -53,6 +73,10 @@ function normalizeHit(doc: any) {
     variant_label: doc.variant_label || "",
     availability: doc.availability,
     availability_description: doc.availability_description,
+    purchasable: doc.purchasable !== false && doc.quote_only !== true,
+    quote_only: doc.quote_only === true,
+    purchase_action: doc.purchase_action || (doc.quote_only ? "quote_only" : "cart"),
+    purchase_message: doc.purchase_message || "",
   };
 }
 
@@ -63,6 +87,7 @@ export async function OPTIONS() {
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const q = searchParams.get("q") || "";
+  const customerId = searchParams.get("customer_id") || "";
 
   if (q.trim().length < 2) {
     return NextResponse.json({ products: [], facets: [] }, { headers: corsHeaders });
@@ -80,28 +105,35 @@ export async function GET(req: NextRequest) {
       query_by_weights: "30,24,16,12,8,7,6,5,5,3",
       filter_by: "is_visible:=true",
       facet_by: "brand,categories",
-      per_page: 8,
+      max_facet_values: 24,
+      per_page: 48,
       num_typos: 2,
       typo_tokens_threshold: 1,
       prefix: true,
       highlight_full_fields: "name,sku,brand,sold_by,categories,variant_label,option_text",
     });
 
-  const hits = applyPinnedSkuRanking(applyHiddenSkuFilter(results.hits || [], controls), q, controls);
-  const products = hits.map((hit: any) => normalizeHit(hit.document));
+  const hits = applyPinnedSkuRanking(
+    applyIntentRanking(applyPrivateCategoryFilter(applyHiddenSkuFilter(results.hits || [], controls), customerId, controls), q, smartQuery.search_query),
+    q,
+    controls
+  );
+  const products = hits.slice(0, 12).map((hit: any) => normalizeHit(hit.document));
   const categoryUrls = categoryUrlMapFromHits(hits);
 
-  const facets =
-    results.facet_counts?.map((facet: any) => ({
-      field: facet.field_name,
-      values:
-        facet.field_name === "categories"
-          ? (facet.counts?.slice(0, 7) || []).map((item: any) => ({
-              ...item,
-              url: categoryUrls.get(item.value) || "",
-            }))
-          : facet.counts?.slice(0, 7) || [],
-    })) || [];
+  const facets = [
+    {
+      field: "brand",
+      values: facetCountsFromHits(hits, "brand"),
+    },
+    {
+      field: "categories",
+      values: facetCountsFromHits(hits, "categories").map((item) => ({
+        ...item,
+        url: categoryUrls.get(item.value) || "",
+      })),
+    },
+  ];
 
   return NextResponse.json(
     {

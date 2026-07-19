@@ -3,6 +3,7 @@ import { stripHtml, normalizeSku, uniq } from "./clean";
 const STORE_HASH = process.env.BIGCOMMERCE_STORE_HASH!;
 const ACCESS_TOKEN = process.env.BIGCOMMERCE_ACCESS_TOKEN!;
 const API_BASE = `https://api.bigcommerce.com/stores/${STORE_HASH}/v3`;
+const API_V2_BASE = `https://api.bigcommerce.com/stores/${STORE_HASH}/v2`;
 const STORE_URL = process.env.EMRN_STORE_URL || "https://emrn.ca";
 
 type BigCommerceListResponse<T> = {
@@ -31,6 +32,11 @@ type BCProduct = {
   availability?: string;
   availability_description?: string;
   is_visible?: boolean;
+  purchasing_disabled?: boolean;
+  is_purchasing_disabled?: boolean;
+  call_for_price?: boolean;
+  is_price_hidden?: boolean;
+  price_hidden_label?: string;
   custom_url?: {
     url?: string;
   };
@@ -76,8 +82,37 @@ type BCCategory = {
   };
 };
 
+type BCOrder = {
+  id: number;
+};
+
+type BCOrderProduct = {
+  product_id?: number;
+  variant_id?: number;
+  sku?: string;
+  quantity?: number;
+};
+
 async function bcFetch<T>(path: string): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
+    headers: {
+      "X-Auth-Token": ACCESS_TOKEN,
+      Accept: "application/json",
+      "Content-Type": "application/json",
+    },
+    cache: "no-store",
+  });
+
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`BigCommerce API error ${res.status}: ${body}`);
+  }
+
+  return res.json();
+}
+
+async function bcFetchV2<T>(path: string): Promise<T> {
+  const res = await fetch(`${API_V2_BASE}${path}`, {
     headers: {
       "X-Auth-Token": ACCESS_TOKEN,
       Accept: "application/json",
@@ -128,6 +163,17 @@ function productImage(product: BCProduct) {
   );
 }
 
+function extractColorOption(value: string) {
+  const match = String(value || "").match(/(?:^|[,|;])\s*(?:colou?r)\s*:\s*([^,|;]+)/i);
+  return match ? match[1].trim() : "";
+}
+
+function trimSearchText(value: string, maxLength: number) {
+  const text = String(value || "").replace(/\s+/g, " ").trim();
+  if (text.length <= maxLength) return text;
+  return text.slice(0, maxLength).replace(/\s+\S*$/, "").trim();
+}
+
 function variantOptionText(variant: NonNullable<BCProduct["variants"]>[number]) {
   return (variant.option_values || [])
     .map((option) =>
@@ -152,14 +198,45 @@ function docName(parentName: string, label: string) {
 
 function productIsEnabled(product: BCProduct) {
   if (product.is_visible === false) return false;
-  if (String(product.availability || "").toLowerCase() === "disabled") return false;
+  if (productIsPurchasingDisabled(product) && !productIsQuoteOnly(product)) return false;
   return true;
 }
 
-function variantIsEnabled(variant: NonNullable<BCProduct["variants"]>[number]) {
-  if (variant.purchasing_disabled === true) return false;
-  if (variant.is_purchasing_disabled === true) return false;
-  return true;
+function textSaysQuoteOnly(value: string) {
+  return /contact\s+us\s+for\s+quote|request\s+a\s+quote|quote\s+only|devis|soumission/i.test(value);
+}
+
+function productIsQuoteOnly(product: BCProduct) {
+  if (product.call_for_price === true) return true;
+
+  const text = [
+    product.availability,
+    product.availability_description,
+    product.price_hidden_label,
+    ...(product.custom_fields || []).map((field) => `${field.name}: ${field.value}`),
+  ]
+    .filter(Boolean)
+    .join(" ");
+
+  if (product.is_price_hidden === true && textSaysQuoteOnly(text)) return true;
+
+  return textSaysQuoteOnly(text);
+}
+
+function productIsPurchasingDisabled(product: BCProduct) {
+  if (product.purchasing_disabled === true) return true;
+  if (product.is_purchasing_disabled === true) return true;
+  if (String(product.availability || "").toLowerCase() === "disabled") return true;
+  return false;
+}
+
+function variantIsPurchasingDisabled(variant: NonNullable<BCProduct["variants"]>[number]) {
+  return variant.purchasing_disabled === true || variant.is_purchasing_disabled === true;
+}
+
+function variantIsSearchable(variant: NonNullable<BCProduct["variants"]>[number], parentQuoteOnly: boolean) {
+  if (!variantIsPurchasingDisabled(variant)) return true;
+  return parentQuoteOnly;
 }
 
 function getCustomField(product: BCProduct, wantedName: string) {
@@ -181,13 +258,65 @@ export async function getCategoriesMap() {
   return new Map(categories.map((cat) => [cat.id, cat]));
 }
 
+async function fetchRecentOrders(limit: number) {
+  const orders: BCOrder[] = [];
+  let page = 1;
+
+  while (orders.length < limit) {
+    const batch = await bcFetchV2<BCOrder[]>(
+      `/orders?limit=250&page=${page}&sort=date_created:desc`
+    );
+    if (!batch.length) break;
+    orders.push(...batch);
+    if (batch.length < 250) break;
+    page++;
+  }
+
+  return orders.slice(0, limit);
+}
+
+async function getOrderPopularityMap() {
+  const bySku = new Map<string, number>();
+  const byProductId = new Map<number, number>();
+  const orderLimit = Number(process.env.POPULAR_ORDER_LIMIT || 600);
+
+  try {
+    const orders = await fetchRecentOrders(orderLimit);
+
+    for (let index = 0; index < orders.length; index += 12) {
+      const batch = orders.slice(index, index + 12);
+      const productsByOrder = await Promise.all(
+        batch.map((order) =>
+          bcFetchV2<BCOrderProduct[]>(`/orders/${order.id}/products`).catch(() => [])
+        )
+      );
+
+      for (const orderProducts of productsByOrder) {
+        for (const item of orderProducts) {
+          const quantity = Math.max(1, Number(item.quantity || 1));
+          const sku = normalizeSku(item.sku);
+          const productId = Number(item.product_id || 0);
+
+          if (sku) bySku.set(sku, (bySku.get(sku) || 0) + quantity);
+          if (productId) byProductId.set(productId, (byProductId.get(productId) || 0) + quantity);
+        }
+      }
+    }
+  } catch (error) {
+    console.error("[EMRN SmartSearch] order popularity unavailable", error);
+  }
+
+  return { bySku, byProductId };
+}
+
 export async function getAllProductsForSearch() {
-  const [products, brandsMap, categoriesMap] = await Promise.all([
+  const [products, brandsMap, categoriesMap, popularity] = await Promise.all([
     fetchAllPages<BCProduct>(
       "/catalog/products?include=variants,images,custom_fields"
     ),
     getBrandsMap(),
     getCategoriesMap(),
+    getOrderPopularityMap(),
   ]);
 
   const documents: any[] = [];
@@ -211,7 +340,11 @@ export async function getAllProductsForSearch() {
       .filter(Boolean);
 
     const categoryIds = product.categories || [];
-    const enabledVariants = (product.variants || []).filter(variantIsEnabled);
+    const parentQuoteOnly = productIsQuoteOnly(product);
+    const parentPurchasingDisabled = productIsPurchasingDisabled(product);
+    const enabledVariants = (product.variants || []).filter((variant) =>
+      variantIsSearchable(variant, parentQuoteOnly)
+    );
 
     const variantSkus = uniq(
       enabledVariants
@@ -225,7 +358,7 @@ export async function getAllProductsForSearch() {
       .map((field) => `${field.name}: ${field.value}`)
       .join(" ");
 
-    const description = stripHtml(product.description);
+    const description = trimSearchText(stripHtml(product.description), 1400);
     const productUrl = absoluteStoreUrl(product.custom_url?.url);
 
     const createDoc = (
@@ -237,6 +370,13 @@ export async function getAllProductsForSearch() {
       const sku = normalizeSku(variant?.sku || product.sku);
       const variantId = variant?.id || 0;
       const isVariant = Boolean(variantId);
+      const popularityScore =
+        (sku ? popularity.bySku.get(sku) || 0 : 0) ||
+        popularity.byProductId.get(product.id) ||
+        0;
+      const variantPurchasingDisabled = variant ? variantIsPurchasingDisabled(variant) : false;
+      const quoteOnly = parentQuoteOnly || variantPurchasingDisabled;
+      const purchasable = !quoteOnly && !parentPurchasingDisabled && !variantPurchasingDisabled;
 
       const name = docName(product.name || "", label || optionText);
 
@@ -253,7 +393,7 @@ export async function getAllProductsForSearch() {
 
       const image = variant?.image_url || baseImage;
 
-      const searchText = [
+      const searchText = trimSearchText([
         name,
         product.name,
         sku,
@@ -268,7 +408,7 @@ export async function getAllProductsForSearch() {
         customFieldText,
       ]
         .filter(Boolean)
-        .join(" ");
+        .join(" "), 2600);
 
       return {
         id: variantId ? `${product.id}-${variantId}` : `${product.id}-${fallbackIndex}`,
@@ -289,6 +429,7 @@ export async function getAllProductsForSearch() {
         custom_fields_text: customFieldText,
         option_text: optionText,
         variant_label: label,
+        color: extractColorOption(optionText || label),
         search_text: searchText,
         price,
         sale_price: salePrice,
@@ -296,8 +437,17 @@ export async function getAllProductsForSearch() {
         image,
         url: productUrl,
         inventory_level: Number(variant?.inventory_level ?? product.inventory_level ?? 0),
+        popularity_score: popularityScore,
         availability: product.availability || "",
         availability_description: product.availability_description || "",
+        purchasable,
+        quote_only: quoteOnly,
+        purchase_action: quoteOnly ? "quote_only" : "cart",
+        purchase_message: quoteOnly
+          ? product.availability_description ||
+            product.price_hidden_label ||
+            "Contact us for quote"
+          : "",
         is_visible: true,
         date_modified: product.date_modified || "",
       };

@@ -5,10 +5,19 @@ export type SearchRedirect = {
   url: string;
 };
 
+export type PrivateCategoryRule = {
+  enabled: boolean;
+  label: string;
+  categoryIds: number[];
+  categoryNames: string[];
+  allowedCustomerIds: string[];
+};
+
 export type SearchOverrides = {
   redirects: SearchRedirect[];
   pinnedSkus: Record<string, string[]>;
   hiddenSkus: string[];
+  privateCategoryRules: PrivateCategoryRule[];
   boostTerms: Record<string, string[]>;
   noResultsSuggestions: Record<string, string[]>;
 };
@@ -38,11 +47,19 @@ export const defaultSearchOverrides: SearchOverrides = {
     seringue: [],
     "shower chair": [],
     "fauteuil de douche": [],
+    "cat tourniquet": ["30001OR", "30001NO", "30001BL"],
+    "combat application tourniquet": ["30001OR", "30001NO", "30001BL"],
   },
 
-  hiddenSkus: [],
+  hiddenSkus: ["X-REDO-RETURN-PACKAGE-PROTECTION"],
+  privateCategoryRules: [],
 
   boostTerms: {
+    aed: ["defibrillator", "defibrillators", "automated external defibrillator", "Philips AED", "ZOLL AED", "Physio Control AED"],
+    "aed defibrillation": ["defibrillator", "defibrillators", "Philips AED", "ZOLL AED", "Physio Control AED"],
+    defibrillation: ["defibrillator", "defibrillators", "AED", "Philips AED", "ZOLL AED", "Physio Control AED"],
+    defibrillator: ["AED", "defibrillators", "automated external defibrillator", "Philips AED", "ZOLL AED", "Physio Control AED"],
+    defibrillators: ["AED", "defibrillator", "automated external defibrillator", "Philips AED", "ZOLL AED", "Physio Control AED"],
     "aed pads": ["defibrillator pads", "aed electrodes"],
     "bp cuff": ["blood pressure cuff", "sphygmomanometer"],
     "blood pressure machine": ["blood pressure monitor", "sphygmomanometer"],
@@ -50,8 +67,13 @@ export const defaultSearchOverrides: SearchOverrides = {
     "cpr dummy": ["cpr manikin", "training manikin"],
     mannequin: ["manikin", "training manikin", "patient simulator"],
     pansement: ["wound dressing", "bandage"],
+    ciseaux: ["scissors", "bandage scissors", "dressing scissors", "medical scissors", "shears"],
+    "ciseaux à pansements": ["bandage scissors", "dressing scissors", "scissors", "bandage shears"],
+    "ciseaux a pansements": ["bandage scissors", "dressing scissors", "scissors", "bandage shears"],
     seringue: ["syringe"],
     gants: ["gloves", "nitrile gloves", "exam gloves"],
+    "cat tourniquet": ["combat application tourniquet", "CAT", "tourniquet"],
+    "combat application tourniquet": ["CAT tourniquet", "tourniquet"],
   },
 
   noResultsSuggestions: {
@@ -63,6 +85,8 @@ export const defaultSearchOverrides: SearchOverrides = {
     mannequin: ["cpr manikin", "training manikin", "patient simulator"],
     syringe: ["3 ml syringe", "safety syringe", "needle syringe"],
     seringue: ["3 ml syringe", "safety syringe", "needle syringe"],
+    ciseaux: ["bandage scissors", "dressing scissors", "medical scissors"],
+    "ciseaux à pansements": ["bandage scissors", "dressing scissors", "medical scissors"],
     "shower chair": ["bath bench", "bath chair", "transfer bench"],
     "fauteuil de douche": ["shower chair", "bath bench", "transfer bench"],
   },
@@ -79,6 +103,17 @@ export function normalizeOverrideQuery(query: string) {
     .toLowerCase()
     .replace(/\s+/g, " ")
     .trim();
+}
+
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function matchesOverrideTerm(normalizedQuery: string, normalizedTerm: string) {
+  if (!normalizedQuery || !normalizedTerm) return false;
+  if (normalizedQuery === normalizedTerm) return true;
+  const pattern = new RegExp(`(^|\\s)${escapeRegExp(normalizedTerm)}(?=\\s|$)`);
+  return pattern.test(normalizedQuery);
 }
 
 function cleanStringList(values: unknown) {
@@ -101,6 +136,31 @@ function cleanStringMap(map: unknown) {
   return output;
 }
 
+function cleanNumberList(values: unknown) {
+  if (!Array.isArray(values)) return [];
+  return Array.from(
+    new Set(
+      values
+        .map((value) => Number(value))
+        .filter((value) => Number.isInteger(value) && value > 0)
+    )
+  );
+}
+
+function cleanPrivateCategoryRules(values: unknown): PrivateCategoryRule[] {
+  if (!Array.isArray(values)) return [];
+
+  return values
+    .map((rule) => ({
+      enabled: rule?.enabled !== false,
+      label: String(rule?.label || "").trim(),
+      categoryIds: cleanNumberList(rule?.categoryIds),
+      categoryNames: cleanStringList(rule?.categoryNames),
+      allowedCustomerIds: cleanStringList(rule?.allowedCustomerIds).map((id) => id.replace(/[^0-9A-Za-z_-]/g, "")),
+    }))
+    .filter((rule) => rule.categoryIds.length || rule.categoryNames.length);
+}
+
 export function sanitizeSearchOverrides(input: Partial<SearchOverrides> | null | undefined): SearchOverrides {
   return {
     redirects: Array.isArray(input?.redirects)
@@ -114,6 +174,7 @@ export function sanitizeSearchOverrides(input: Partial<SearchOverrides> | null |
 
     pinnedSkus: cleanStringMap(input?.pinnedSkus),
     hiddenSkus: cleanStringList(input?.hiddenSkus),
+    privateCategoryRules: cleanPrivateCategoryRules(input?.privateCategoryRules),
     boostTerms: cleanStringMap(input?.boostTerms),
     noResultsSuggestions: cleanStringMap(input?.noResultsSuggestions),
   };
@@ -129,6 +190,7 @@ export function mergeSearchOverrides(runtime?: Partial<SearchOverrides> | null):
       ...cleanRuntime.pinnedSkus,
     },
     hiddenSkus: Array.from(new Set([...defaultSearchOverrides.hiddenSkus, ...cleanRuntime.hiddenSkus])),
+    privateCategoryRules: [...defaultSearchOverrides.privateCategoryRules, ...cleanRuntime.privateCategoryRules],
     boostTerms: {
       ...defaultSearchOverrides.boostTerms,
       ...cleanRuntime.boostTerms,
@@ -225,7 +287,7 @@ export function getPinnedSkusForQuery(query: string, controls = defaultSearchOve
 
   for (const [term, values] of Object.entries(controls.pinnedSkus)) {
     const normalizedTerm = normalizeOverrideQuery(term);
-    if (normalized === normalizedTerm || normalized.includes(normalizedTerm)) {
+    if (matchesOverrideTerm(normalized, normalizedTerm)) {
       values.forEach((sku) => sku && skus.add(sku));
     }
   }
@@ -239,8 +301,15 @@ export function getBoostTermsForQuery(query: string, controls = defaultSearchOve
 
   for (const [term, values] of Object.entries(controls.boostTerms)) {
     const normalizedTerm = normalizeOverrideQuery(term);
-    if (normalized === normalizedTerm || normalized.includes(normalizedTerm)) {
+    if (matchesOverrideTerm(normalized, normalizedTerm)) {
       values.forEach((value) => value && terms.add(value));
+    }
+    for (const value of values) {
+      const normalizedValue = normalizeOverrideQuery(value);
+      if (normalizedValue && matchesOverrideTerm(normalized, normalizedValue)) {
+        terms.add(term);
+        values.forEach((sibling) => sibling && sibling !== value && terms.add(sibling));
+      }
     }
   }
 
@@ -253,10 +322,36 @@ export function getNoResultsSuggestionsForQuery(query: string, controls = defaul
 
   for (const [term, values] of Object.entries(controls.noResultsSuggestions)) {
     const normalizedTerm = normalizeOverrideQuery(term);
-    if (normalized === normalizedTerm || normalized.includes(normalizedTerm)) {
+    if (matchesOverrideTerm(normalized, normalizedTerm)) {
       values.forEach((value) => value && suggestions.add(value));
     }
   }
 
   return Array.from(suggestions);
+}
+
+function normalizeCustomerId(customerId: string | null | undefined) {
+  return String(customerId || "").trim().replace(/[^0-9A-Za-z_-]/g, "");
+}
+
+export function getBlockedPrivateCategoryRules(customerId: string | null | undefined, controls = defaultSearchOverrides) {
+  const normalizedCustomerId = normalizeCustomerId(customerId);
+
+  return controls.privateCategoryRules.filter((rule) => {
+    if (!rule.enabled) return false;
+    return !rule.allowedCustomerIds.some((id) => normalizeCustomerId(id) === normalizedCustomerId);
+  });
+}
+
+export function getAllowedPrivateCategoryRules(customerId: string | null | undefined, controls = defaultSearchOverrides) {
+  const normalizedCustomerId = normalizeCustomerId(customerId);
+
+  return controls.privateCategoryRules.filter((rule) => {
+    if (!rule.enabled) return false;
+    return rule.allowedCustomerIds.some((id) => normalizeCustomerId(id) === normalizedCustomerId);
+  });
+}
+
+export function getHiddenCategoryRules(controls = defaultSearchOverrides) {
+  return controls.privateCategoryRules.filter((rule) => rule.enabled);
 }

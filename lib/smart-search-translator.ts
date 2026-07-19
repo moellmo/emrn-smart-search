@@ -95,16 +95,15 @@ function preserveModifiers(original: string) {
 
 function buildManualQuery(original: string, expansions: string[]) {
   if (!expansions.length) return "";
-  const primary = expansions[0];
   const modifiers = preserveModifiers(original);
-  return cleanSearchQuery([primary, modifiers].filter(Boolean).join(" "));
+  return cleanSearchQuery([...expansions.slice(0, 6), modifiers].filter(Boolean).join(" "));
 }
 
 async function translateWithOpenAI(query: string, language: "en" | "fr") {
   const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) return { query: "", status: "missing_key" as const };
+  if (!apiKey) return { query: "", alternatives: [] as string[], status: "missing_key" as const };
 
-  const model = process.env.OPENAI_SEARCH_TRANSLATOR_MODEL || "gpt-4.1-mini";
+  const model = process.env.OPENAI_SEARCH_TRANSLATOR_MODEL || "gpt-4.1-nano";
   const input = [
     {
       role: "system",
@@ -117,6 +116,9 @@ async function translateWithOpenAI(query: string, language: "en" | "fr") {
     },
   ];
 
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 1400);
+
   try {
     const res = await fetch("https://api.openai.com/v1/responses", {
       method: "POST",
@@ -124,20 +126,26 @@ async function translateWithOpenAI(query: string, language: "en" | "fr") {
         Authorization: `Bearer ${apiKey}`,
         "Content-Type": "application/json",
       },
+      signal: controller.signal,
       body: JSON.stringify({ model, input }),
     });
 
     if (!res.ok) {
       console.error("[EMRN SmartSearch] OpenAI translator error", res.status, await res.text());
-      return { query: "", status: "error" as const };
+      return { query: "", alternatives: [] as string[], status: "error" as const };
     }
 
     const payload = await res.json();
     const parsed = safeParseJson(extractOutputText(payload));
-    return { query: cleanSearchQuery(parsed?.english_query || ""), status: "called" as const };
+    const alternatives = Array.isArray(parsed?.alternatives)
+      ? parsed.alternatives.map((item: unknown) => cleanSearchQuery(String(item || ""))).filter(Boolean)
+      : [];
+    return { query: cleanSearchQuery(parsed?.english_query || ""), alternatives, status: "called" as const };
   } catch (error) {
     console.error("[EMRN SmartSearch] OpenAI translator request failed", error);
-    return { query: "", status: "error" as const };
+    return { query: "", alternatives: [] as string[], status: "error" as const };
+  } finally {
+    clearTimeout(timeout);
   }
 }
 
@@ -160,14 +168,15 @@ export async function buildSmartSearchQuery(query: string): Promise<SmartQueryRe
   const shouldUseAI =
     original !== "*" &&
     original.length >= 3 &&
-    (language === "fr" || manual.expansions.length === 0) &&
-    (wordCount >= 3 || !translated);
+    language === "fr" &&
+    !manual.expansions.length &&
+    (wordCount >= 2 || !translated);
 
   if (shouldUseAI) {
     const ai = await translateWithOpenAI(original, language);
     aiStatus = ai.status;
     if (ai.query) {
-      translated = ai.query;
+      translated = cleanSearchQuery([ai.query, translated, ...ai.alternatives.slice(0, 6)].filter(Boolean).join(" "));
       translator = translator === "manual" ? "manual+openai" : "openai";
     }
   }
@@ -201,4 +210,3 @@ export async function buildSmartSearchQuery(query: string): Promise<SmartQueryRe
   cache.set(cacheKey, { value: result, expiresAt: Date.now() + CACHE_TTL_MS });
   return result;
 }
-
