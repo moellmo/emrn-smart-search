@@ -498,8 +498,104 @@ const manikinAccessoryDemoteTerms = [
   "plate",
   "harness",
   "vest",
+  "carry bag",
+  "carry bags",
+  "carrying bag",
+  "carrying bags",
+  "storage bag",
+  "storage bags",
   "taser training vest",
   "arrhythmia simulator",
+];
+
+const cprMaskTerms = [
+  "cpr mask",
+  "cpr masks",
+  "cpr pocket mask",
+  "pocket mask",
+  "pocket masks",
+  "cpr pocket ventilator",
+  "pocket ventilator",
+  "resuscitation mask",
+  "resuscitation masks",
+  "barrier device",
+  "barrier devices",
+  "face shield",
+  "face shields",
+  "masque rcr",
+  "masques rcr",
+  "rcr mask",
+  "rcr masks",
+];
+
+const cprMaskDemoteTerms = [
+  "n95",
+  "kn95",
+  "respirator",
+  "respirators",
+  "particulate",
+  "surgical mask",
+  "procedure mask",
+  "earloop",
+  "tie back",
+  "oxygen mask",
+  "nebulizer",
+];
+
+const beltTerms = [
+  "belt",
+  "belts",
+  "ceinture",
+  "ceintures",
+  "gait belt",
+  "transfer belt",
+  "escape belt",
+  "stretcher belt",
+  "cot belt",
+  "safety belt",
+  "seat belt",
+  "seatbelt",
+];
+
+const beltDemoteTerms = [
+  "denture",
+  "dentures",
+  "denture cup",
+  "denture cleanser",
+  "denture adhesive",
+  "event marker",
+  "recording paper",
+  "probe",
+  "gel",
+];
+
+const stairChairTerms = [
+  "stair chair",
+  "stairchair",
+  "stair chairs",
+  "stairchairs",
+  "carry chair",
+  "carry chairs",
+  "transcend carry chair",
+  "evacuation chair",
+  "evac chair",
+];
+
+const stairChairDemoteTerms = [
+  "accessory",
+  "accessories",
+  "strap",
+  "straps",
+  "restraint",
+  "restraints",
+  "replacement",
+  "mount",
+  "bracket",
+  "track",
+  "tread",
+  "handle",
+  "wheel",
+  "wheels",
 ];
 
 const accessoryIntentRules = [
@@ -627,6 +723,27 @@ export function applyIntentRanking(hits: any[] = [], originalQuery: string, sear
       demoteStrong: manikinAccessoryDemoteTerms,
     },
     {
+      match: ["cpr mask", "cpr masks", "masque rcr", "masques rcr", "rcr mask", "rcr masks"],
+      prefer: cprMaskTerms,
+      preferStrong: ["cpr pocket mask", "cpr pocket ventilator", "pocket mask", "pocket ventilator", "resuscitation mask", "barrier device"],
+      demote: cprMaskDemoteTerms,
+      demoteStrong: cprMaskDemoteTerms,
+    },
+    {
+      match: ["ceinture", "ceintures", "belt", "belts"],
+      prefer: beltTerms,
+      preferStrong: ["gait belt", "transfer belt", "escape belt", "stretcher belt", "cot belt", "safety belt", "seat belt", "seatbelt"],
+      demote: beltDemoteTerms,
+      demoteStrong: beltDemoteTerms,
+    },
+    {
+      match: ["stair chair", "stairchair", "stair chairs", "stairchairs"],
+      prefer: stairChairTerms,
+      preferStrong: ["stair chair", "stairchair", "carry chair", "transcend carry chair", "evacuation chair"],
+      demote: stairChairDemoteTerms,
+      demoteStrong: stairChairDemoteTerms,
+    },
+    {
       match: ["fournitures pour perfusion intraveineuse", "fournitures intraveineuses", "materiel intraveineux", "matériel intraveineux", "iv supplies", "iv administration", "iv solution", "iv catheter", "intravenous"],
       prefer: ["iv administration", "iv catheters", "iv catheter", "iv solution", "intravenous", "nexiva", "vacutainer", "sodium chloride", "saline"],
       demote: ["training", "trainer", "simulation", "furniture", "furnishings", "dresser", "bookcase", "cabinet", "drawer"],
@@ -681,6 +798,26 @@ export function applyIntentRanking(hits: any[] = [], originalQuery: string, sear
       if ((nameLooksLikeUnit || categoryLooksLikeTraining) && !nameLooksLikeAccessory) intentScore += 280;
       else if (nameLooksLikeUnit) intentScore += 90;
       if (nameLooksLikeAccessory) intentScore -= 340;
+    }
+    const isCprMaskQuery = hasAny(query, ["cpr mask", "cpr masks", "masque rcr", "masques rcr", "rcr mask", "rcr masks"]);
+    if (isCprMaskQuery) {
+      const nameLooksLikeCprMask = hasAny(nameText, cprMaskTerms);
+      if (nameLooksLikeCprMask) intentScore += 340;
+      else if (hasAny(nameText, cprMaskDemoteTerms)) intentScore -= 360;
+    }
+    const isBeltQuery = hasAny(query, ["ceinture", "ceintures", "belt", "belts"]);
+    if (isBeltQuery) {
+      const nameLooksLikeBelt = hasAny(nameText, beltTerms);
+      if (nameLooksLikeBelt) intentScore += 240;
+      if (hasAny(nameText, beltDemoteTerms)) intentScore -= 360;
+    }
+    const isStairChairQuery = hasAny(query, ["stair chair", "stairchair", "stair chairs", "stairchairs"]);
+    if (isStairChairQuery) {
+      const nameLooksLikeStairChair = hasAny(nameText, stairChairTerms);
+      const nameLooksLikeStairAccessory = hasAny(nameText, stairChairDemoteTerms);
+      if (nameLooksLikeStairChair && !nameLooksLikeStairAccessory) intentScore += 300;
+      else if (nameLooksLikeStairChair) intentScore += 80;
+      if (nameLooksLikeStairAccessory) intentScore -= 220;
     }
     for (const rule of activeAccessoryRules) {
       if (hasAnyWholeWord(text, rule.accessories)) intentScore += 35;
