@@ -155,6 +155,42 @@ function isLikelyBrandQuery(query: string) {
   return words.length <= 3 && normalized.length <= 40 && /^[a-z0-9 &.'+-]+$/.test(normalized);
 }
 
+function includesAny(text: string, terms: string[]) {
+  return terms.some((term) => text.includes(normalizeSearchText(term)));
+}
+
+function autocompleteRecallQueries(originalQuery: string, translatedQuery: string) {
+  const query = normalizeSearchText(`${originalQuery} ${translatedQuery}`);
+  const recalls: string[] = [];
+  const add = (...terms: string[]) => {
+    for (const term of terms) {
+      const clean = term.trim();
+      if (clean && !recalls.includes(clean)) recalls.push(clean);
+    }
+  };
+
+  if (includesAny(query, ["glove", "gloves", "gant", "gants"])) {
+    add("nitrile gloves", "exam gloves", "surgical gloves", "medical gloves", "glove");
+  }
+  if (includesAny(query, ["pansement", "pansements", "wound dressing", "wound dressings", "dressing", "dressings"])) {
+    add("wound dressing", "bandage", "gauze", "dressings");
+  }
+  if (includesAny(query, ["scalpel", "scalpels", "knife", "knives"])) {
+    add("scalpel", "scalpel blade", "surgical blade");
+  }
+  if (includesAny(query, ["ceinture", "ceintures", "belt", "belts"])) {
+    add("gait belt", "transfer belt", "safety belt", "stretcher belt", "belt");
+  }
+  if (includesAny(query, ["little family qcpr", "little family", "little junior qcpr", "little junior"])) {
+    add(originalQuery, "little family qcpr", "little junior qcpr", "qcpr manikin");
+  }
+  if (includesAny(query, ["cpr mask", "cpr masks", "masque rcr", "masques rcr", "rcr mask", "rcr masks"])) {
+    add("cpr pocket mask", "pocket mask", "cpr mask", "face shield");
+  }
+
+  return recalls.slice(0, 6);
+}
+
 export async function OPTIONS() {
   return new NextResponse(null, { status: 204, headers: corsHeaders });
 }
@@ -218,6 +254,27 @@ export async function GET(req: NextRequest) {
           facet_by: "brand,categories",
           max_facet_values: 24,
           per_page: 48,
+        })
+    );
+  }
+
+  for (const recallQuery of autocompleteRecallQueries(q, smartQuery.search_query)) {
+    supplementalSearches.push(
+      typesenseSearch
+        .collections(COLLECTION_NAME)
+        .documents()
+        .search({
+          q: recallQuery,
+          query_by: "name,parent_name,categories,variant_label,option_text,search_text,sku,all_skus,brand",
+          query_by_weights: "26,22,14,8,8,6,4,3,2",
+          filter_by: "is_visible:=true",
+          facet_by: "brand,categories",
+          max_facet_values: 24,
+          per_page: 36,
+          num_typos: 1,
+          typo_tokens_threshold: 1,
+          prefix: true,
+          highlight_full_fields: "name,parent_name,categories,variant_label,option_text",
         })
     );
   }
