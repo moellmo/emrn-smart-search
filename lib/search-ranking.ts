@@ -330,6 +330,12 @@ const bagIntentTerms = [
 const bagDemoteTerms = [
   "sick bag",
   "emesis bag",
+  "plastic bag",
+  "bio bag",
+  "bio bags",
+  "biohazard bag",
+  "autoclavable",
+  "specimen bag",
   "cold pack",
   "ice pack",
   "valve",
@@ -622,6 +628,39 @@ const cprMaskDemoteTerms = [
   "nebulizer",
 ];
 
+const oxygenMaskTerms = [
+  "oxygen mask",
+  "oxygen masks",
+  "non-rebreather",
+  "non rebreather",
+  "non-rebreathing",
+  "rebreathing",
+  "air soft mask",
+  "oxygen therapy mask",
+  "aerosol mask",
+  "nebulizer mask",
+  "medium concentration mask",
+  "high concentration mask",
+  "mask with tubing",
+];
+
+const oxygenMaskDemoteTerms = [
+  "n95",
+  "kn95",
+  "particulate",
+  "respirator",
+  "respirators",
+  "surgical mask",
+  "procedure mask",
+  "earloop",
+  "tie back",
+  "box dispenser",
+  "dispenser",
+  "cpr pocket mask",
+  "pocket mask",
+  "face shield",
+];
+
 const beltTerms = [
   "belt",
   "belts",
@@ -846,7 +885,7 @@ export function applyIntentRanking(hits: any[] = [], originalQuery: string, sear
       demoteStrong: firstAidKitDemoteTerms,
     },
     {
-      match: ["medical bag", "medical bags", "medic bag", "medic bags", "trauma bag", "trauma bags", "ems bag", "emt bag", "first aid bag", "first aid bags", "jump bag", "jump bags", "rescue bag", "rescue bags"],
+      match: ["medical bag", "medical bags", "medic bag", "medic bags", "trauma bag", "trauma bags", "ems bag", "emt bag", "first aid bag", "first aid bags", "jump bag", "jump bags", "rescue bag", "rescue bags", "sac medical", "sac médical", "sacs medicaux", "sacs médicaux"],
       prefer: bagIntentTerms,
       preferStrong: ["medical bag", "medical bags", "first aid bag", "first aid bags", "trauma bag", "trauma bags", "ems bag", "emt bag", "jump bag", "jump bags", "rescue bag", "rescue bags", "oxygen bag", "oxygen bags", "backpack", "pouch"],
       demote: bagDemoteTerms,
@@ -882,6 +921,13 @@ export function applyIntentRanking(hits: any[] = [], originalQuery: string, sear
       preferStrong: ["cpr manikin", "training manikin", "patient simulator", "rescue dummy", "emergency dummy", "water rescue manikin", "nursing manikin", "ferno rescue emergency dummy", "prestan", "resusci anne"],
       demote: manikinAccessoryDemoteTerms,
       demoteStrong: manikinAccessoryDemoteTerms,
+    },
+    {
+      match: ["oxygen mask", "oxygen masks", "masque oxygene", "masque oxygène", "masque d oxygene", "masque d’oxygène", "masques oxygene", "masques oxygène"],
+      prefer: oxygenMaskTerms,
+      preferStrong: ["oxygen mask", "oxygen masks", "non-rebreather", "non rebreather", "high concentration", "medium concentration"],
+      demote: oxygenMaskDemoteTerms,
+      demoteStrong: oxygenMaskDemoteTerms,
     },
     {
       match: ["cpr mask", "cpr masks", "masque rcr", "masques rcr", "rcr mask", "rcr masks"],
@@ -949,7 +995,7 @@ export function applyIntentRanking(hits: any[] = [], originalQuery: string, sear
       else if (nameLooksLikeKit) intentScore += 160;
       else intentScore -= 420;
     }
-    const isMedicalBagQuery = hasAny(query, ["medical bag", "medical bags", "medic bag", "medic bags", "trauma bag", "trauma bags", "ems bag", "emt bag", "first aid bag", "first aid bags", "jump bag", "jump bags", "rescue bag", "rescue bags"]);
+    const isMedicalBagQuery = hasAny(query, ["medical bag", "medical bags", "medic bag", "medic bags", "trauma bag", "trauma bags", "ems bag", "emt bag", "first aid bag", "first aid bags", "jump bag", "jump bags", "rescue bag", "rescue bags", "sac medical", "sac médical", "sacs medicaux", "sacs médicaux"]);
     if (isMedicalBagQuery) {
       const inMedicalBags = categoryText.includes(" medical bags ");
       const namedLikeBag = hasAny(nameText, bagIntentTerms);
@@ -997,6 +1043,13 @@ export function applyIntentRanking(hits: any[] = [], originalQuery: string, sear
       if (nameLooksLikeCprMask) intentScore += 340;
       else intentScore -= 520;
       if (hasAny(nameText, cprMaskDemoteTerms)) intentScore -= 360;
+    }
+    const isOxygenMaskQuery = hasAny(query, ["oxygen mask", "oxygen masks", "masque oxygene", "masque oxygène", "masque d oxygene", "masque d’oxygène", "masques oxygene", "masques oxygène"]);
+    if (isOxygenMaskQuery) {
+      const nameLooksLikeOxygenMask = hasAny(nameText, oxygenMaskTerms) || categoryText.includes(" oxygen masks ");
+      if (nameLooksLikeOxygenMask) intentScore += 460;
+      else intentScore -= 560;
+      if (hasAny(nameText, oxygenMaskDemoteTerms)) intentScore -= 380;
     }
     const isBeltQuery = hasAny(query, ["ceinture", "ceintures", "belt", "belts"]);
     if (isBeltQuery) {

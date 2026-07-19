@@ -246,7 +246,10 @@ function supplementalRecallQueries(originalQuery: string, translatedQuery: strin
   if (includesAny(query, ["ceinture", "ceintures", "belt", "belts"])) {
     add("gait belt", "transfer belt", "safety belt", "stretcher belt", "belt");
   }
-  if (includesAny(query, ["medical bag", "medical bags", "medic bag", "medic bags", "trauma bag", "trauma bags", "ems bag", "emt bag", "jump bag", "jump bags"])) {
+  if (includesAny(query, ["oxygen mask", "oxygen masks", "masque oxygene", "masque oxygène", "masque d oxygene", "masque d’oxygène", "masques oxygene", "masques oxygène"])) {
+    add("oxygen mask", "oxygen masks", "non-rebreather mask", "high concentration oxygen mask");
+  }
+  if (includesAny(query, ["medical bag", "medical bags", "medic bag", "medic bags", "trauma bag", "trauma bags", "ems bag", "emt bag", "jump bag", "jump bags", "sac medical", "sac médical", "sacs medicaux", "sacs médicaux"])) {
     add("medical bag", "medical bags", "trauma bag", "ems bag", "first aid bag", "rescue bag");
   }
   if (includesAny(query, ["stretcher", "stretchers", "brancard", "brancards", "civiere", "civière"])) {
