@@ -114,6 +114,39 @@ function isAedUnitQuery(query: string) {
   ].some((term) => normalized === normalizeSearchText(term) || normalized.includes(normalizeSearchText(term)));
 }
 
+function singularCategoryPhrase(value: string) {
+  return value.endsWith("s") && value.length > 3 ? value.slice(0, -1) : value;
+}
+
+function categoryFacetNamesForQuery(result: any, originalQuery: string, searchQuery: string) {
+  const queries = Array.from(
+    new Set(
+      [originalQuery, searchQuery]
+        .map((value) => normalizeSearchText(value))
+        .filter((value) => value && value !== "*" && value.length >= 3)
+    )
+  );
+  if (!queries.length) return [];
+
+  const categories = (result?.facet_counts || [])
+    .find((facet: any) => facet.field_name === "categories")
+    ?.counts || [];
+
+  return categories
+    .map((item: any) => String(item.value || "").trim())
+    .filter(Boolean)
+    .filter((category: string) => {
+      const normalizedCategory = normalizeSearchText(category);
+      const categorySingular = singularCategoryPhrase(normalizedCategory);
+      return queries.some((query) => {
+        const querySingular = singularCategoryPhrase(query);
+        return normalizedCategory === query || categorySingular === querySingular ||
+          (query.length >= 5 && (normalizedCategory.includes(query) || query.includes(normalizedCategory) || categorySingular.includes(querySingular) || querySingular.includes(categorySingular)));
+      });
+    })
+    .slice(0, 3);
+}
+
 function isLikelyBrandQuery(query: string) {
   const normalized = normalizeSearchText(query);
   if (!normalized || normalized === "*") return false;
@@ -166,6 +199,22 @@ export async function GET(req: NextRequest) {
           q: "*",
           query_by: "sku,all_skus,name,parent_name,brand,categories,search_text",
           filter_by: `is_visible:=true && category_ids:=[${AED_CATEGORY_ID}]`,
+          facet_by: "brand,categories",
+          max_facet_values: 24,
+          per_page: 48,
+        })
+    );
+  }
+
+  for (const categoryName of categoryFacetNamesForQuery(results, q, smartQuery.search_query)) {
+    supplementalSearches.push(
+      typesenseSearch
+        .collections(COLLECTION_NAME)
+        .documents()
+        .search({
+          q: "*",
+          query_by: "sku,all_skus,name,parent_name,brand,categories,search_text",
+          filter_by: `is_visible:=true && categories:=${JSON.stringify(categoryName)}`,
           facet_by: "brand,categories",
           max_facet_values: 24,
           per_page: 48,
