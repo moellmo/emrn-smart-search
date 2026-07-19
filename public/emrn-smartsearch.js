@@ -187,7 +187,6 @@
     .emrn-smart-cart-btn.emrn-atc-loading::after,.emrn-smart-quote-btn.emrn-atc-loading::after{content:"";position:absolute;inset:0;border-radius:inherit;background:linear-gradient(120deg,rgba(255,255,255,.08),rgba(255,255,255,.38),rgba(255,255,255,.08));background-size:260% 100%;animation:emrn-quote-shimmer 1.45s linear infinite;pointer-events:none}
     .emrn-smart-cart-btn.emrn-atc-success,.emrn-smart-quote-btn.emrn-atc-success{background:#25a56a!important;border-color:#25a56a!important;color:#fff!important;box-shadow:0 8px 18px rgba(37,165,106,.22)}
     @keyframes emrn-quote-shimmer{0%{background-position:-160% 0}100%{background-position:160% 0}}
-    .emrn-smart-quote-note{min-height:18px;margin:5px 0 1px;color:#8a3b3e;font-size:12px;font-weight:800;line-height:1.35}
     .emrn-smart-message{background:#fffafa;border:1px solid #f0dada;border-radius:16px;padding:18px;color:#666}
     .emrn-smart-load-more{margin:24px auto 0;display:flex;align-items:center;justify-content:center;width:min(260px,100%);height:46px;border:0;border-radius:999px;background:#c34d50;color:#fff;font-weight:900;cursor:pointer}
     .emrn-smart-load-more[disabled]{opacity:.65;cursor:not-allowed}
