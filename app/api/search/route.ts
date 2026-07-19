@@ -223,6 +223,39 @@ function isLikelyBrandQuery(query: string) {
   return words.length <= 3 && normalized.length <= 40 && /^[a-z0-9 &.'+-]+$/.test(normalized);
 }
 
+function includesAny(text: string, terms: string[]) {
+  return terms.some((term) => text.includes(normalizeSearchText(term)));
+}
+
+function supplementalRecallQueries(originalQuery: string, translatedQuery: string) {
+  const query = normalizeSearchText(`${originalQuery} ${translatedQuery}`);
+  const recalls: string[] = [];
+  const add = (...terms: string[]) => {
+    for (const term of terms) {
+      const clean = term.trim();
+      if (clean && !recalls.includes(clean)) recalls.push(clean);
+    }
+  };
+
+  if (includesAny(query, ["qcpr", "q cpr", "little baby", "little family", "little junior", "little anne", "baby qcpr", "family qcpr", "junior qcpr"])) {
+    add("little baby qcpr", "little family qcpr", "little junior qcpr", "little anne qcpr", "qcpr manikin");
+  }
+  if (includesAny(query, ["dummy", "dummies", "manikin", "manikins", "mannequin", "mannequins"])) {
+    add("cpr manikin", "training manikin", "patient simulator", "rescue dummy", "manikin");
+  }
+  if (includesAny(query, ["ceinture", "ceintures", "belt", "belts"])) {
+    add("gait belt", "transfer belt", "safety belt", "stretcher belt", "belt");
+  }
+  if (includesAny(query, ["medical bag", "medical bags", "medic bag", "medic bags", "trauma bag", "trauma bags", "ems bag", "emt bag", "jump bag", "jump bags"])) {
+    add("medical bag", "medical bags", "trauma bag", "ems bag", "first aid bag", "rescue bag");
+  }
+  if (includesAny(query, ["stretcher", "stretchers", "brancard", "brancards", "civiere", "civière"])) {
+    add("stretcher", "ambulance cot", "scoop stretcher", "basket stretcher", "rescue stretcher");
+  }
+
+  return recalls.slice(0, 8);
+}
+
 function cleanCategoryIds(value: string | null) {
   return Array.from(
     new Set(
@@ -398,7 +431,7 @@ export async function GET(req: NextRequest) {
     });
 
   if (results.hits) {
-    const supplementalSearches: Array<{ kind: "aed" | "brand" | "category_family"; search: Promise<any> }> = [];
+    const supplementalSearches: Array<{ kind: "aed" | "brand" | "category_family" | "recall"; search: Promise<any> }> = [];
     const supplementalBase = filters.join(" && ");
 
     if (isAedUnitQuery(q) && !category && !categoryIds.length) {
@@ -443,6 +476,33 @@ export async function GET(req: NextRequest) {
             }),
         }
       );
+    }
+
+    if (!category && !categoryIds.length) {
+      for (const recallQuery of supplementalRecallQueries(q, smartQuery.search_query)) {
+        supplementalSearches.push({
+          kind: "recall",
+          search: typesenseSearch
+            .collections(COLLECTION_NAME)
+            .documents()
+            .search({
+              q: recallQuery,
+              query_by:
+                "sku,all_skus,name,parent_name,brand,sold_by,categories,variant_label,option_text,search_text,description,custom_fields_text",
+              query_by_weights: "30,24,16,12,8,7,7,6,6,4,2,2",
+              filter_by: supplementalBase,
+              facet_by: "brand,categories,sold_by,color,price,availability",
+              max_facet_values: 1000,
+              sort_by: normalizeSort(sort),
+              per_page: Math.min(requestedPerPage * 8, 180),
+              limit_hits: SEARCH_HIT_LIMIT,
+              page,
+              num_typos: 1,
+              typo_tokens_threshold: 1,
+              prefix: true,
+            }),
+        });
+      }
     }
 
     if (isLikelyBrandQuery(q) && !brand) {

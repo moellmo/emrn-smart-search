@@ -148,7 +148,7 @@ function originalNamePhraseScore(nameText: string, originalQuery: string) {
     .filter((token) => token.length >= 2);
 
   if (tokens.length < 2) return 0;
-  if (nameText.includes(` ${normalized} `)) return 760;
+  if (` ${nameText} `.includes(` ${normalized} `)) return 900;
 
   const matchingTokens = tokens.filter((token) => new RegExp(`(^|\\s)${token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(\\s|$)`).test(nameText));
   if (matchingTokens.length === tokens.length) return 560;
