@@ -615,6 +615,80 @@ const stairChairDemoteTerms = [
   "wheels",
 ];
 
+const gloveTerms = [
+  "glove",
+  "gloves",
+  "exam glove",
+  "exam gloves",
+  "nitrile glove",
+  "nitrile gloves",
+  "surgical glove",
+  "surgical gloves",
+  "medical glove",
+  "medical gloves",
+  "gant",
+  "gants",
+];
+
+const gloveDemoteTerms = [
+  "bag",
+  "bags",
+  "kit",
+  "kits",
+  "ob kit",
+  "duffel",
+  "backpack",
+  "tourniquet",
+  "mount",
+  "walker",
+];
+
+const dressingTerms = [
+  "wound dressing",
+  "wound dressings",
+  "dressing",
+  "dressings",
+  "bandage",
+  "bandages",
+  "gauze",
+  "compress",
+  "compresses",
+  "pansement",
+  "pansements",
+];
+
+const dressingDemoteTerms = [
+  "walker",
+  "knee walker",
+  "cane",
+  "crutch",
+  "wheelchair",
+  "mobility",
+  "manikin",
+  "simulator",
+  "bag",
+];
+
+const scalpelTerms = [
+  "scalpel",
+  "scalpels",
+  "scalpel blade",
+  "scalpel blades",
+  "surgical blade",
+  "surgical blades",
+  "knife",
+  "knives",
+];
+
+const scalpelDemoteTerms = [
+  "trauma trainer",
+  "trainer",
+  "training",
+  "simulator",
+  "manikin",
+  "dummy",
+];
+
 const accessoryIntentRules = [
   {
     match: ["aed", "defib", "defibrillator", "defibrillators", "defibrillateur", "défibrillateur", "dea"],
@@ -761,6 +835,27 @@ export function applyIntentRanking(hits: any[] = [], originalQuery: string, sear
       demoteStrong: stairChairDemoteTerms,
     },
     {
+      match: ["glove", "gloves", "gant", "gants"],
+      prefer: gloveTerms,
+      preferStrong: ["exam glove", "exam gloves", "nitrile glove", "nitrile gloves", "surgical glove", "surgical gloves", "medical glove", "medical gloves"],
+      demote: gloveDemoteTerms,
+      demoteStrong: gloveDemoteTerms,
+    },
+    {
+      match: ["pansement", "pansements", "wound dressing", "wound dressings", "dressing", "dressings"],
+      prefer: dressingTerms,
+      preferStrong: ["wound dressing", "wound dressings", "dressing", "dressings", "bandage", "bandages", "gauze"],
+      demote: dressingDemoteTerms,
+      demoteStrong: dressingDemoteTerms,
+    },
+    {
+      match: ["scalpel", "scalpels", "knife", "knives"],
+      prefer: scalpelTerms,
+      preferStrong: ["scalpel", "scalpels", "scalpel blade", "scalpel blades", "surgical blade", "surgical blades"],
+      demote: scalpelDemoteTerms,
+      demoteStrong: scalpelDemoteTerms,
+    },
+    {
       match: ["fournitures pour perfusion intraveineuse", "fournitures intraveineuses", "materiel intraveineux", "matériel intraveineux", "iv supplies", "iv administration", "iv solution", "iv catheter", "intravenous"],
       prefer: ["iv administration", "iv catheters", "iv catheter", "iv solution", "intravenous", "nexiva", "vacutainer", "sodium chloride", "saline"],
       demote: ["training", "trainer", "simulation", "furniture", "furnishings", "dresser", "bookcase", "cabinet", "drawer"],
@@ -836,6 +931,24 @@ export function applyIntentRanking(hits: any[] = [], originalQuery: string, sear
       if (nameLooksLikeStairChair && !nameLooksLikeStairAccessory) intentScore += 300;
       else if (nameLooksLikeStairChair) intentScore += 80;
       if (nameLooksLikeStairAccessory) intentScore -= 220;
+    }
+    const isGloveQuery = hasAny(query, ["glove", "gloves", "gant", "gants"]);
+    if (isGloveQuery) {
+      const nameLooksLikeGlove = hasAny(nameText, gloveTerms);
+      if (nameLooksLikeGlove) intentScore += 420;
+      if (hasAny(nameText, gloveDemoteTerms)) intentScore -= 420;
+    }
+    const isDressingQuery = hasAny(query, ["pansement", "pansements", "wound dressing", "wound dressings", "dressing", "dressings"]);
+    if (isDressingQuery) {
+      const nameLooksLikeDressing = hasAny(nameText, dressingTerms);
+      if (nameLooksLikeDressing) intentScore += 360;
+      if (hasAny(nameText, dressingDemoteTerms)) intentScore -= 380;
+    }
+    const isScalpelQuery = hasAny(query, ["scalpel", "scalpels", "knife", "knives"]);
+    if (isScalpelQuery) {
+      const nameLooksLikeScalpel = hasAny(nameText, scalpelTerms);
+      if (nameLooksLikeScalpel) intentScore += 360;
+      if (hasAny(nameText, scalpelDemoteTerms)) intentScore -= 360;
     }
     for (const rule of activeAccessoryRules) {
       if (hasAnyWholeWord(text, rule.accessories)) intentScore += 35;
