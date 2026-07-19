@@ -96,7 +96,7 @@ function preserveModifiers(original: string) {
 function buildManualQuery(original: string, expansions: string[]) {
   if (!expansions.length) return "";
   const modifiers = preserveModifiers(original);
-  return cleanSearchQuery([...expansions.slice(0, 6), modifiers].filter(Boolean).join(" "));
+  return cleanSearchQuery([original, ...expansions.slice(0, 6), modifiers].filter(Boolean).join(" "));
 }
 
 async function translateWithOpenAI(query: string, language: "en" | "fr") {
