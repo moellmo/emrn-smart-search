@@ -916,12 +916,14 @@ export function applyIntentRanking(hits: any[] = [], originalQuery: string, sear
     if (isCprMaskQuery) {
       const nameLooksLikeCprMask = hasAny(nameText, cprMaskTerms);
       if (nameLooksLikeCprMask) intentScore += 340;
-      else if (hasAny(nameText, cprMaskDemoteTerms)) intentScore -= 360;
+      else intentScore -= 520;
+      if (hasAny(nameText, cprMaskDemoteTerms)) intentScore -= 360;
     }
     const isBeltQuery = hasAny(query, ["ceinture", "ceintures", "belt", "belts"]);
     if (isBeltQuery) {
       const nameLooksLikeBelt = hasAny(nameText, beltTerms);
       if (nameLooksLikeBelt) intentScore += 240;
+      else intentScore -= 520;
       if (hasAny(nameText, beltDemoteTerms)) intentScore -= 360;
     }
     const isStairChairQuery = hasAny(query, ["stair chair", "stairchair", "stair chairs", "stairchairs"]);
@@ -936,18 +938,21 @@ export function applyIntentRanking(hits: any[] = [], originalQuery: string, sear
     if (isGloveQuery) {
       const nameLooksLikeGlove = hasAny(nameText, gloveTerms);
       if (nameLooksLikeGlove) intentScore += 420;
+      else intentScore -= 620;
       if (hasAny(nameText, gloveDemoteTerms)) intentScore -= 420;
     }
     const isDressingQuery = hasAny(query, ["pansement", "pansements", "wound dressing", "wound dressings", "dressing", "dressings"]);
     if (isDressingQuery) {
       const nameLooksLikeDressing = hasAny(nameText, dressingTerms);
       if (nameLooksLikeDressing) intentScore += 360;
+      else intentScore -= 560;
       if (hasAny(nameText, dressingDemoteTerms)) intentScore -= 380;
     }
     const isScalpelQuery = hasAny(query, ["scalpel", "scalpels", "knife", "knives"]);
     if (isScalpelQuery) {
       const nameLooksLikeScalpel = hasAny(nameText, scalpelTerms);
       if (nameLooksLikeScalpel) intentScore += 360;
+      else intentScore -= 560;
       if (hasAny(nameText, scalpelDemoteTerms)) intentScore -= 360;
     }
     for (const rule of activeAccessoryRules) {
