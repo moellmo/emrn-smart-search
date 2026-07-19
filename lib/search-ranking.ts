@@ -98,6 +98,16 @@ function docText(hit: any) {
   ].filter(Boolean).join(" "));
 }
 
+function docNameText(hit: any) {
+  const doc = hit.document || {};
+  return normalizeSearchText([
+    doc.name,
+    doc.parent_name,
+    doc.variant_label,
+    doc.option_text,
+  ].filter(Boolean).join(" "));
+}
+
 function docCategories(hit: any) {
   const categories = hit.document?.categories;
   const values = Array.isArray(categories) ? categories : [categories];
@@ -277,6 +287,47 @@ const stretcherAccessoryDemote = [
   "tape",
 ];
 
+const bagIntentTerms = [
+  "medical bag",
+  "medical bags",
+  "medic bag",
+  "medic bags",
+  "trauma bag",
+  "trauma bags",
+  "ems bag",
+  "emt bag",
+  "first aid bag",
+  "first aid bags",
+  "jump bag",
+  "jump bags",
+  "rescue bag",
+  "rescue bags",
+  "oxygen bag",
+  "oxygen bags",
+  "backpack",
+  "backpacks",
+  "pouch",
+  "pouches",
+];
+
+const bagDemoteTerms = [
+  "sick bag",
+  "emesis bag",
+  "cold pack",
+  "ice pack",
+  "valve",
+  "filter",
+  "adapter",
+  "replacement",
+  "receptacle",
+  "cushion",
+  "catheter",
+  "bottle",
+  "prep pad",
+  "alcohol prep",
+  "pad sterile",
+];
+
 const patientMonitorUnitTerms = [
   "patient monitor",
   "patient monitors",
@@ -333,6 +384,12 @@ const patientMonitorDemoteTerms = [
   "probe",
   "roll stand",
   "stand",
+  "ecg monitoring electrode",
+  "ekg diagnostic electrode",
+  "resting ekg",
+  "monitoring electrode",
+  "electrode",
+  "electrodes",
   "mount",
   "bracket",
   "paper",
@@ -432,6 +489,13 @@ export function applyIntentRanking(hits: any[] = [], originalQuery: string, sear
       skipDemote: isAccessoryQuery,
     },
     {
+      match: ["medical bag", "medical bags", "medic bag", "medic bags", "trauma bag", "trauma bags", "ems bag", "emt bag", "first aid bag", "first aid bags", "jump bag", "jump bags", "rescue bag", "rescue bags"],
+      prefer: bagIntentTerms,
+      preferStrong: ["medical bag", "medical bags", "first aid bag", "first aid bags", "trauma bag", "trauma bags", "ems bag", "emt bag", "jump bag", "jump bags", "rescue bag", "rescue bags", "oxygen bag", "oxygen bags", "backpack", "pouch"],
+      demote: bagDemoteTerms,
+      demoteStrong: bagDemoteTerms,
+    },
+    {
       match: ["soin des plaies", "soins des plaies", "soins de plaies", "traitement des plaies", "wound care", "wound dressing", "wound dressings"],
       prefer: ["wound care", "wound dressing", "wound dressings", "dressings", "gauze", "bandage", "bandages"],
       demote: ["manikin", "manikins", "training", "trainer", "simulator", "skin", "cpr", "torso"],
@@ -459,16 +523,28 @@ export function applyIntentRanking(hits: any[] = [], originalQuery: string, sear
 
   const scoreHit = (hit: any) => {
     const text = ` ${docText(hit)} `;
+    const nameText = ` ${docNameText(hit)} `;
+    const categoryText = ` ${docCategories(hit).join(" ")} `;
     let intentScore = categoryPhraseScore(hit, originalQuery, searchQuery);
     const textScore = Number(hit.text_match || hit._text_match || 0);
+    const isMedicalBagQuery = hasAny(query, ["medical bag", "medical bags", "medic bag", "medic bags", "trauma bag", "trauma bags", "ems bag", "emt bag", "first aid bag", "first aid bags", "jump bag", "jump bags", "rescue bag", "rescue bags"]);
+    if (isMedicalBagQuery) {
+      if (categoryText.includes(" medical bags ") || hasAny(nameText, bagIntentTerms)) intentScore += 140;
+      if (!categoryText.includes(" medical bags ") && hasAny(nameText, bagDemoteTerms)) intentScore -= 130;
+    }
+    const isPatientMonitorQuery = hasAny(query, ["patient monitor", "patient monitors", "patient monitoring", "vital signs monitor", "vital sign monitor", "vitals monitor", "moniteur patient", "moniteur de patient", "moniteur de signes vitaux"]);
+    if (isPatientMonitorQuery) {
+      if (hasAny(nameText, patientMonitorUnitTerms)) intentScore += 150;
+      if (hasAny(nameText, patientMonitorDemoteTerms)) intentScore -= 150;
+    }
     for (const rule of activeAccessoryRules) {
       if (hasAnyWholeWord(text, rule.accessories)) intentScore += 35;
       if (hasAny(text, rule.demoteMain) && !hasAnyWholeWord(text, rule.accessories)) intentScore -= 35;
     }
     for (const intent of active) {
       if (intent.skipDemote) continue;
-      if ("preferStrong" in intent && intent.preferStrong && hasAny(text, intent.preferStrong)) intentScore += 35;
-      if (hasAny(text, intent.prefer)) intentScore += 10;
+      if ("preferStrong" in intent && intent.preferStrong && hasAny(nameText, intent.preferStrong)) intentScore += 35;
+      if (hasAny(nameText, intent.prefer)) intentScore += 10;
       if ("demoteStrong" in intent && intent.demoteStrong && hasAny(text, intent.demoteStrong)) intentScore -= 80;
       if (hasAny(text, intent.demote)) intentScore -= 20;
     }
