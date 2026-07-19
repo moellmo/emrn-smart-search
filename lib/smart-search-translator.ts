@@ -165,12 +165,13 @@ export async function buildSmartSearchQuery(query: string): Promise<SmartQueryRe
   let aiStatus: SmartQueryResult["ai_status"] = "not_needed";
 
   const wordCount = normalizeSearchText(original).split(" ").filter(Boolean).length;
+  const looksNaturalLanguage = /^[a-zA-ZÀ-ÿ\s'-]+$/.test(original) && !/\d/.test(original);
   const shouldUseAI =
     original !== "*" &&
     original.length >= 3 &&
-    language === "fr" &&
     !manual.expansions.length &&
-    (wordCount >= 2 || !translated);
+    looksNaturalLanguage &&
+    (language === "fr" || wordCount <= 4);
 
   if (shouldUseAI) {
     const ai = await translateWithOpenAI(original, language);

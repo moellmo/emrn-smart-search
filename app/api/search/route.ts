@@ -334,76 +334,90 @@ export async function GET(req: NextRequest) {
     });
 
   if (results.hits) {
-    const supplementalSearches: Promise<any>[] = [];
+    const supplementalSearches: Array<{ kind: "aed" | "brand" | "category_family"; search: Promise<any> }> = [];
     const supplementalBase = filters.join(" && ");
 
     if (isAedUnitQuery(q) && !category && !categoryIds.length) {
       supplementalSearches.push(
-        typesenseSearch
-          .collections(COLLECTION_NAME)
-          .documents()
-          .search({
-            q: "*",
-            query_by: "sku,all_skus,name,parent_name,brand,categories,search_text",
-            filter_by: [supplementalBase, `category_ids:=[${AED_CATEGORY_ID}]`].filter(Boolean).join(" && "),
-            facet_by: "brand,categories,sold_by,color,price,availability",
-            max_facet_values: 1000,
-            sort_by: normalizeSort(sort),
-            per_page: Math.min(requestedPerPage * 3, 100),
-            limit_hits: SEARCH_HIT_LIMIT,
-            page,
-          })
+        {
+          kind: "aed",
+          search: typesenseSearch
+            .collections(COLLECTION_NAME)
+            .documents()
+            .search({
+              q: "*",
+              query_by: "sku,all_skus,name,parent_name,brand,categories,search_text",
+              filter_by: [supplementalBase, `category_ids:=[${AED_CATEGORY_ID}]`].filter(Boolean).join(" && "),
+              facet_by: "brand,categories,sold_by,color,price,availability",
+              max_facet_values: 1000,
+              sort_by: normalizeSort(sort),
+              per_page: Math.min(requestedPerPage * 3, 100),
+              limit_hits: SEARCH_HIT_LIMIT,
+              page,
+            }),
+        }
       );
     }
 
     if (categoryFamilyIds.length) {
       supplementalSearches.push(
-        typesenseSearch
-          .collections(COLLECTION_NAME)
-          .documents()
-          .search({
-            q: "*",
-            query_by: "sku,all_skus,name,parent_name,brand,categories,search_text",
-            filter_by: [supplementalBase, `category_ids:=[${categoryFamilyIds.join(",")}]`].filter(Boolean).join(" && "),
-            facet_by: "brand,categories,sold_by,color,price,availability",
-            max_facet_values: 1000,
-            sort_by: normalizeSort(sort),
-            per_page: Math.min(requestedPerPage * 3, 100),
-            limit_hits: SEARCH_HIT_LIMIT,
-            page,
-          })
+        {
+          kind: "category_family",
+          search: typesenseSearch
+            .collections(COLLECTION_NAME)
+            .documents()
+            .search({
+              q: "*",
+              query_by: "sku,all_skus,name,parent_name,brand,categories,search_text",
+              filter_by: [supplementalBase, `category_ids:=[${categoryFamilyIds.join(",")}]`].filter(Boolean).join(" && "),
+              facet_by: "brand,categories,sold_by,color,price,availability",
+              max_facet_values: 1000,
+              sort_by: normalizeSort(sort),
+              per_page: Math.min(requestedPerPage * 3, 100),
+              limit_hits: SEARCH_HIT_LIMIT,
+              page,
+            }),
+        }
       );
     }
 
     if (isLikelyBrandQuery(q) && !brand) {
       supplementalSearches.push(
-        typesenseSearch
-          .collections(COLLECTION_NAME)
-          .documents()
-          .search({
-            q,
-            query_by: "brand",
-            query_by_weights: "10",
-            filter_by: supplementalBase,
-            facet_by: "brand,categories,sold_by,color,price,availability",
-            max_facet_values: 1000,
-            sort_by: normalizeSort(sort),
-            per_page: Math.min(requestedPerPage * 3, 100),
-            limit_hits: SEARCH_HIT_LIMIT,
-            page,
-            num_typos: 1,
-            typo_tokens_threshold: 1,
-            prefix: true,
-          })
+        {
+          kind: "brand",
+          search: typesenseSearch
+            .collections(COLLECTION_NAME)
+            .documents()
+            .search({
+              q,
+              query_by: "brand",
+              query_by_weights: "10",
+              filter_by: supplementalBase,
+              facet_by: "brand,categories,sold_by,color,price,availability",
+              max_facet_values: 1000,
+              sort_by: normalizeSort(sort),
+              per_page: Math.min(requestedPerPage * 3, 100),
+              limit_hits: SEARCH_HIT_LIMIT,
+              page,
+              num_typos: 1,
+              typo_tokens_threshold: 1,
+              prefix: true,
+            }),
+        }
       );
     }
 
     const supplementalResults = supplementalSearches.length
-      ? await Promise.allSettled(supplementalSearches)
+      ? await Promise.allSettled(supplementalSearches.map((item) => item.search))
       : [];
-    const fulfilledSupplementalResults = supplementalResults.flatMap((result) =>
-      result.status === "fulfilled" ? [result.value] : []
+    const fulfilledSupplementalItems = supplementalResults.flatMap((result, index) =>
+      result.status === "fulfilled" ? [{ kind: supplementalSearches[index].kind, result: result.value }] : []
     );
+    const fulfilledSupplementalResults = fulfilledSupplementalItems.map((item) => item.result);
+    const categoryFamilyResult = fulfilledSupplementalItems.find((item) => item.kind === "category_family")?.result;
+    const nonCategoryFamilyResults = fulfilledSupplementalItems
+      .filter((item) => item.kind !== "category_family")
+      .map((item) => item.result);
     const supplementalHits = fulfilledSupplementalResults.flatMap((result) => result?.hits || []);
 
     const filteredHits = applyPinnedSkuRanking(
@@ -420,9 +434,15 @@ export async function GET(req: NextRequest) {
     );
 
     if (fulfilledSupplementalResults.length) {
-      results.facet_counts = ["brand", "categories", "sold_by", "color", "price", "availability"].map((field) =>
-        mergeFacetCounts(field, results, ...fulfilledSupplementalResults)
-      );
+      const facetBase =
+        categoryFamilyResult && Number(categoryFamilyResult.found || 0) >= Number(results.found || 0)
+          ? categoryFamilyResult
+          : results;
+      results.facet_counts = nonCategoryFamilyResults.length
+        ? ["brand", "categories", "sold_by", "color", "price", "availability"].map((field) =>
+            mergeFacetCounts(field, facetBase, ...nonCategoryFamilyResults)
+          )
+        : facetBase.facet_counts;
       results.found = Math.max(
         Number(results.found || 0),
         ...fulfilledSupplementalResults.map((result) => Number(result?.found || 0))

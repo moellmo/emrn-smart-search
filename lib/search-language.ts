@@ -279,6 +279,8 @@ export const manualSearchSynonyms: Array<[string, string[]]> = [
   ["oreiller", ["pillow"]],
   ["civiere", ["stretcher", "scoop stretcher"]],
   ["civière", ["stretcher", "scoop stretcher"]],
+  ["brancard", ["stretcher", "transport stretcher", "ambulance stretcher"]],
+  ["brancards", ["stretchers", "stretcher", "transport stretcher", "ambulance stretcher"]],
   ["scoop", ["scoop stretcher", "stretcher"]],
   ["sac vomi", ["emesis bag", "vomit bag"]],
   ["vomit", ["emesis bag", "vomit bag"]],
@@ -392,7 +394,7 @@ const frenchSignals = [
   "plaie", "plaies", "soin", "soins", "bacteriostatique", "bactériostatique",
   "hemostatique", "hémostatique", "endotracheal", "endotrachéal", "nebuliseur",
   "nébuliseur", "regulateur", "régulateur", "biopsie", "spéculum", "compresse froide",
-  "bloc froid", "poinçon", "poincon", "civière", "civiere"
+  "bloc froid", "poinçon", "poincon", "civière", "civiere", "brancard", "brancards"
 ];
 
 export function detectQueryLanguage(query: string): LanguageCode {
