@@ -458,16 +458,19 @@ function SavedRules({
   emptyText: string;
   compact?: boolean;
 }) {
-  const rows = Object.entries(map || {}).filter(([, values]) => values.length);
+  const rows = Object.entries(map || {}).filter(([, values]) => values.length).sort(([a], [b]) => a.localeCompare(b));
   const [showAll, setShowAll] = useState(false);
-  const visibleRows = showAll ? rows : rows.slice(0, compact ? 4 : 5);
+  const previewCount = compact ? 4 : 6;
+  const visibleRows = showAll ? rows : rows.slice(0, previewCount);
 
   return (
     <div style={{ marginTop: 14, border: "1px solid #e5e7eb", borderRadius: 14, background: "#f8fafc", padding: 12 }}>
-      <h3 style={{ margin: "0 0 10px", fontSize: 15, color: "#111827" }}>{title}</h3>
+      <h3 style={{ margin: "0 0 10px", fontSize: 15, color: "#111827" }}>
+        {title}{rows.length ? ` (${rows.length})` : ""}
+      </h3>
       {rows.length ? (
         <>
-          <div style={{ maxHeight: showAll ? (compact ? 220 : 260) : "none", overflow: showAll ? "auto" : "visible", display: "grid", gap: 8 }}>
+          <div style={{ maxHeight: showAll ? (compact ? 220 : 320) : "none", overflow: showAll ? "auto" : "visible", display: "grid", gap: 8 }}>
             {visibleRows.map(([term, values]) => (
               <div key={term} style={{ display: "grid", gridTemplateColumns: compact ? "1fr" : "160px 1fr", gap: 8, padding: 10, border: "1px solid #e2e8f0", borderRadius: 12, background: "#fff" }}>
                 <strong style={{ color: "#14365d", overflowWrap: "anywhere" }}>{term}</strong>
@@ -477,7 +480,7 @@ function SavedRules({
           </div>
           {rows.length > visibleRows.length || showAll ? (
             <button onClick={() => setShowAll(!showAll)} style={{ ...outlineButtonStyle, marginTop: 10 }}>
-              {showAll ? "Show fewer" : `View all ${rows.length}`}
+              {showAll ? "Show fewer" : `View all ${rows.length} saved rules`}
             </button>
           ) : null}
         </>
@@ -499,11 +502,14 @@ function SavedPrivateCategoryRules({
 }) {
   const activeRules = rules || [];
   const [showAll, setShowAll] = useState(false);
-  const visibleRules = showAll ? activeRules : activeRules.slice(0, compact ? 4 : 5);
+  const previewCount = compact ? 4 : 6;
+  const visibleRules = showAll ? activeRules : activeRules.slice(0, previewCount);
 
   return (
     <div style={{ marginTop: 14, border: "1px solid #e5e7eb", borderRadius: 14, background: "#f8fafc", padding: 12 }}>
-      <h3 style={{ margin: "0 0 10px", fontSize: 15, color: "#111827" }}>{title}</h3>
+      <h3 style={{ margin: "0 0 10px", fontSize: 15, color: "#111827" }}>
+        {title}{activeRules.length ? ` (${activeRules.length})` : ""}
+      </h3>
       {activeRules.length ? (
         <>
           <div style={{ maxHeight: showAll ? (compact ? 220 : 260) : "none", overflow: showAll ? "auto" : "visible", display: "grid", gap: 8 }}>
@@ -525,7 +531,7 @@ function SavedPrivateCategoryRules({
           </div>
           {activeRules.length > visibleRules.length || showAll ? (
             <button onClick={() => setShowAll(!showAll)} style={{ ...outlineButtonStyle, marginTop: 10 }}>
-              {showAll ? "Show fewer" : `View all ${activeRules.length}`}
+              {showAll ? "Show fewer" : `View all ${activeRules.length} saved rules`}
             </button>
           ) : null}
         </>

@@ -441,6 +441,67 @@ const patientMonitorDemoteTerms = [
   "red dot",
 ];
 
+const manikinUnitTerms = [
+  "cpr manikin",
+  "cpr manikins",
+  "training manikin",
+  "training manikins",
+  "simulation manikin",
+  "simulation manikins",
+  "patient simulator",
+  "patient simulators",
+  "rescue dummy",
+  "rescue dummies",
+  "emergency dummy",
+  "emergency dummies",
+  "water rescue manikin",
+  "water rescue manikins",
+  "nursing manikin",
+  "nursing manikins",
+  "medical training manikin",
+  "manikin",
+  "manikins",
+  "mannequin",
+  "mannequins",
+  "dummy",
+  "dummies",
+  "resusci anne",
+  "prestan",
+  "ambu man",
+  "little anne",
+  "ruth lee",
+  "ferno rescue emergency dummy",
+];
+
+const manikinAccessoryDemoteTerms = [
+  "parts and accessories",
+  "manikin parts",
+  "dummy accessories",
+  "accessory",
+  "accessories",
+  "replacement",
+  "replaceable",
+  "skin",
+  "skins",
+  "face skin",
+  "lung",
+  "lungs",
+  "airway",
+  "airways",
+  "valve",
+  "adapter",
+  "pads",
+  "cartridge",
+  "injection site",
+  "pericardiocentesis",
+  "plug belly",
+  "plate",
+  "harness",
+  "vest",
+  "taser training vest",
+  "arrhythmia simulator",
+];
+
 const accessoryIntentRules = [
   {
     match: ["aed", "defib", "defibrillator", "defibrillators", "defibrillateur", "défibrillateur", "dea"],
@@ -559,6 +620,13 @@ export function applyIntentRanking(hits: any[] = [], originalQuery: string, sear
       demote: ["valve", "adapter", "pads", "cartridge", "replacement", "injection site", "pericardiocentesis", "parts", "accessories", "plug belly", "plate", "skin", "arrhythmia simulator"],
     },
     {
+      match: ["dummy", "dummies", "manikin", "manikins", "mannequin", "mannequins", "training manikin", "training manikins", "patient simulator", "patient simulators"],
+      prefer: manikinUnitTerms,
+      preferStrong: ["cpr manikin", "training manikin", "patient simulator", "rescue dummy", "emergency dummy", "water rescue manikin", "nursing manikin", "ferno rescue emergency dummy", "prestan", "resusci anne"],
+      demote: manikinAccessoryDemoteTerms,
+      demoteStrong: manikinAccessoryDemoteTerms,
+    },
+    {
       match: ["fournitures pour perfusion intraveineuse", "fournitures intraveineuses", "materiel intraveineux", "matériel intraveineux", "iv supplies", "iv administration", "iv solution", "iv catheter", "intravenous"],
       prefer: ["iv administration", "iv catheters", "iv catheter", "iv solution", "intravenous", "nexiva", "vacutainer", "sodium chloride", "saline"],
       demote: ["training", "trainer", "simulation", "furniture", "furnishings", "dresser", "bookcase", "cabinet", "drawer"],
@@ -604,6 +672,15 @@ export function applyIntentRanking(hits: any[] = [], originalQuery: string, sear
       if (monitorUnitName && !monitorAccessoryName) intentScore += 260;
       else if (hasAny(nameText, patientMonitorUnitTerms)) intentScore += 90;
       if (monitorAccessoryName || hasAny(nameText, patientMonitorDemoteTerms)) intentScore -= 320;
+    }
+    const isManikinQuery = hasAny(query, ["dummy", "dummies", "manikin", "manikins", "mannequin", "mannequins", "training manikin", "patient simulator"]);
+    if (isManikinQuery) {
+      const nameLooksLikeUnit = hasAny(nameText, manikinUnitTerms);
+      const nameLooksLikeAccessory = hasAny(nameText, manikinAccessoryDemoteTerms);
+      const categoryLooksLikeTraining = categoryText.includes(" medical training ") || categoryText.includes(" manikins ");
+      if ((nameLooksLikeUnit || categoryLooksLikeTraining) && !nameLooksLikeAccessory) intentScore += 280;
+      else if (nameLooksLikeUnit) intentScore += 90;
+      if (nameLooksLikeAccessory) intentScore -= 340;
     }
     for (const rule of activeAccessoryRules) {
       if (hasAnyWholeWord(text, rule.accessories)) intentScore += 35;

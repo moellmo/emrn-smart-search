@@ -152,10 +152,20 @@ async function translateWithOpenAI(query: string, language: "en" | "fr") {
 export async function buildSmartSearchQuery(query: string): Promise<SmartQueryResult> {
   const original = cleanSearchQuery(query || "*");
   const cacheKey = original.toLowerCase();
-  const cached = cache.get(cacheKey);
-  if (cached && cached.expiresAt > Date.now()) return cached.value;
-
   const controls = await getEffectiveSearchOverrides();
+  const boostTerms = getBoostTermsForQuery(original, controls);
+  const cached = cache.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) {
+    if (!boostTerms.length) return cached.value;
+    const translated = cleanSearchQuery([cached.value.search_query || original, ...boostTerms].join(" "));
+    return {
+      ...cached.value,
+      search_query: translated,
+      translated_query: translated,
+      translator: cached.value.translator === "none" ? "manual" : cached.value.translator,
+    };
+  }
+
   const redirect = findSearchRedirect(original, controls);
   const manual = expandSearchQuery(original);
   const language = manual.language || detectQueryLanguage(original);
@@ -182,7 +192,6 @@ export async function buildSmartSearchQuery(query: string): Promise<SmartQueryRe
     }
   }
 
-  const boostTerms = getBoostTermsForQuery(original, controls);
   if (boostTerms.length) {
     translated = cleanSearchQuery([translated || original, ...boostTerms].join(" "));
   }
