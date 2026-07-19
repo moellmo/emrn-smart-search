@@ -533,13 +533,23 @@ export function applyIntentRanking(hits: any[] = [], originalQuery: string, sear
       const namedLikeBag = hasAny(nameText, bagIntentTerms);
       if (inMedicalBags) intentScore += 220;
       else if (namedLikeBag) intentScore += 120;
-      else intentScore -= 120;
+      else intentScore -= 500;
       if (!inMedicalBags && hasAny(nameText, bagDemoteTerms)) intentScore -= 150;
     }
     const isPatientMonitorQuery = hasAny(query, ["patient monitor", "patient monitors", "patient monitoring", "vital signs monitor", "vital sign monitor", "vitals monitor", "moniteur patient", "moniteur de patient", "moniteur de signes vitaux"]);
     if (isPatientMonitorQuery) {
-      if (hasAny(nameText, patientMonitorUnitTerms)) intentScore += 150;
-      if (hasAny(nameText, patientMonitorDemoteTerms)) intentScore -= 150;
+      const monitorAccessoryName = hasAny(nameText, [
+        "accessory", "accessories", "cuff", "cuffs", "electrode", "electrodes", "leadwire", "lead wire", "lead wires",
+        "paper", "recording paper", "alarm", "alarms", "sensor", "probe", "hose", "tube", "tubing", "mount", "bracket", "stand",
+      ]);
+      const monitorUnitName = hasAny(nameText, [
+        "patient monitor", "patient monitors", "vital signs monitor", "vital sign monitor", "bedside monitor", "spot monitor",
+        "multiparameter monitor", "multi-parameter monitor", "multi parameter monitor", "fetal monitor", "maternal monitor",
+        "edan ix series monitors", "monitors with touchscreen", "m3 vital signs", "m3a vital signs", "im3s edan", "connex spot", "spot vital sign",
+      ]);
+      if (monitorUnitName && !monitorAccessoryName) intentScore += 260;
+      else if (hasAny(nameText, patientMonitorUnitTerms)) intentScore += 90;
+      if (monitorAccessoryName || hasAny(nameText, patientMonitorDemoteTerms)) intentScore -= 320;
     }
     for (const rule of activeAccessoryRules) {
       if (hasAnyWholeWord(text, rule.accessories)) intentScore += 35;
