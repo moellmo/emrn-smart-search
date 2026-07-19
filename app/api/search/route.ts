@@ -133,6 +133,41 @@ function facetCountsFromHits(hits: any[] = [], field: string, limit = 80) {
   return facet;
 }
 
+function facetByField(result: any, field: string) {
+  return (result?.facet_counts || []).find((facet: any) => facet.field_name === field);
+}
+
+function mergeFacetCounts(field: string, ...groups: any[]) {
+  const counts = new Map<string, number>();
+  let stats: any = null;
+
+  for (const group of groups) {
+    const facet = facetByField(group, field);
+    for (const item of facet?.counts || []) {
+      const value = String(item.value || "").trim();
+      if (!value) continue;
+      counts.set(value, (counts.get(value) || 0) + Number(item.count || 0));
+    }
+    if (field === "price" && facet?.stats) {
+      stats = stats
+        ? {
+            min: Math.min(Number(stats.min || 0), Number(facet.stats.min || 0)),
+            max: Math.max(Number(stats.max || 0), Number(facet.stats.max || 0)),
+          }
+        : facet.stats;
+    }
+  }
+
+  return {
+    field_name: field,
+    counts: Array.from(counts.entries())
+      .map(([value, count]) => ({ value, count }))
+      .sort((a, b) => b.count - a.count || a.value.localeCompare(b.value))
+      .slice(0, 1000),
+    ...(stats ? { stats } : {}),
+  };
+}
+
 export async function OPTIONS() {
   return new NextResponse(null, { status: 204, headers: corsHeaders });
 }
@@ -235,9 +270,10 @@ export async function GET(req: NextRequest) {
     const supplementalResults = supplementalSearches.length
       ? await Promise.allSettled(supplementalSearches)
       : [];
-    const supplementalHits = supplementalResults.flatMap((result) =>
-      result.status === "fulfilled" ? result.value?.hits || [] : []
+    const fulfilledSupplementalResults = supplementalResults.flatMap((result) =>
+      result.status === "fulfilled" ? [result.value] : []
     );
+    const supplementalHits = fulfilledSupplementalResults.flatMap((result) => result?.hits || []);
 
     const filteredHits = applyPinnedSkuRanking(
       applyBrandQueryRanking(
@@ -252,9 +288,11 @@ export async function GET(req: NextRequest) {
       controls
     );
 
-    results.facet_counts = ["brand", "categories", "sold_by", "color", "price", "availability"].map((field) =>
-      facetCountsFromHits(filteredHits, field)
-    );
+    if (fulfilledSupplementalResults.length) {
+      results.facet_counts = ["brand", "categories", "sold_by", "color", "price", "availability"].map((field) =>
+        mergeFacetCounts(field, results, ...fulfilledSupplementalResults)
+      );
+    }
     results.hits = filteredHits.slice(0, requestedPerPage).map((hit: any) => ({
       ...hit,
       document: {
