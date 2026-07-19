@@ -18,6 +18,12 @@ export function normalizeSearchText(value: string) {
 }
 
 export const manualSearchSynonyms: Array<[string, string[]]> = [
+  ["medical bags", ["medical bags", "trauma bags", "oxygen bags", "medical backpacks", "ems bags"]],
+  ["medical bag", ["medical bag", "medical bags", "trauma bag", "oxygen bag", "medical backpack", "ems bag"]],
+  ["medic bags", ["medical bags", "trauma bags", "oxygen bags", "ems bags"]],
+  ["medic bag", ["medical bag", "trauma bag", "oxygen bag", "ems bag"]],
+  ["patient monitors", ["patient monitors", "vital signs monitors", "bedside monitors", "multi-parameter monitors"]],
+  ["patient monitor", ["patient monitor", "vital signs monitor", "bedside monitor", "multi-parameter monitor"]],
   ["masks", ["masks", "face masks", "n95 masks", "n95 respirators", "respirators", "oxygen masks", "procedure face masks"]],
   ["mask", ["mask", "masks", "face mask", "n95 mask", "respirator", "oxygen mask"]],
   ["gants", ["gloves", "medical gloves", "exam gloves", "nitrile gloves", "surgical gloves"]],
