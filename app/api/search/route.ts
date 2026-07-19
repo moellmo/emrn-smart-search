@@ -8,6 +8,9 @@ import { getEffectiveSearchOverrides, getPinnedSkusForQuery } from "../../../lib
 const COLLECTION_NAME = "emrn_products";
 const STORE_URL = process.env.EMRN_STORE_URL || "https://emrn.ca";
 const AED_CATEGORY_ID = 160;
+const SEARCH_HIT_LIMIT = 10000;
+const MISSING_BRAND_LABEL = "No brand";
+const MISSING_SOLD_BY_LABEL = "No Sold By";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -168,6 +171,23 @@ function mergeFacetCounts(field: string, ...groups: any[]) {
   };
 }
 
+function addMissingFacetBucket(result: any, field: string, label: string) {
+  const facet = facetByField(result, field);
+  if (!facet) return;
+
+  const found = Number(result?.found || 0);
+  const counted = (facet.counts || []).reduce((sum: number, item: any) => sum + Number(item.count || 0), 0);
+  const missing = found - counted;
+  if (missing > 0) {
+    facet.counts = [...(facet.counts || []), { value: label, count: missing }];
+  }
+}
+
+function addMissingSingleValueFacetBuckets(result: any) {
+  addMissingFacetBucket(result, "brand", MISSING_BRAND_LABEL);
+  addMissingFacetBucket(result, "sold_by", MISSING_SOLD_BY_LABEL);
+}
+
 export async function OPTIONS() {
   return new NextResponse(null, { status: 204, headers: corsHeaders });
 }
@@ -195,11 +215,11 @@ export async function GET(req: NextRequest) {
   const smartQuery = await buildSmartSearchQuery(q);
   const filters: string[] = ["is_visible:=true"];
 
-  if (brand) filters.push(`brand:=${JSON.stringify(brand)}`);
+  if (brand) filters.push(brand === MISSING_BRAND_LABEL ? `brand:=""` : `brand:=${JSON.stringify(brand)}`);
   if (category && !categoryIds.length) filters.push(`categories:=${JSON.stringify(category)}`);
   if (categoryIds.length) filters.push(`category_ids:=[${categoryIds.join(",")}]`);
   if (availability) filters.push(`availability:=${JSON.stringify(availability)}`);
-  if (soldBy) filters.push(`sold_by:=${JSON.stringify(soldBy)}`);
+  if (soldBy) filters.push(soldBy === MISSING_SOLD_BY_LABEL ? `sold_by:=""` : `sold_by:=${JSON.stringify(soldBy)}`);
   if (color) filters.push(`color:=${JSON.stringify(color)}`);
   if (priceMin && !Number.isNaN(Number(priceMin))) filters.push(`price:>=${Number(priceMin)}`);
   if (priceMax && !Number.isNaN(Number(priceMax))) filters.push(`price:<=${Number(priceMax)}`);
@@ -217,6 +237,7 @@ export async function GET(req: NextRequest) {
       max_facet_values: 1000,
       sort_by: normalizeSort(sort),
       per_page: Math.min(requestedPerPage * 3, 100),
+      limit_hits: SEARCH_HIT_LIMIT,
       page,
       num_typos: 2,
       typo_tokens_threshold: 1,
@@ -240,6 +261,7 @@ export async function GET(req: NextRequest) {
             max_facet_values: 1000,
             sort_by: normalizeSort(sort),
             per_page: Math.min(requestedPerPage * 3, 100),
+            limit_hits: SEARCH_HIT_LIMIT,
             page,
           })
       );
@@ -259,6 +281,7 @@ export async function GET(req: NextRequest) {
             max_facet_values: 1000,
             sort_by: normalizeSort(sort),
             per_page: Math.min(requestedPerPage * 3, 100),
+            limit_hits: SEARCH_HIT_LIMIT,
             page,
             num_typos: 1,
             typo_tokens_threshold: 1,
@@ -293,6 +316,7 @@ export async function GET(req: NextRequest) {
         mergeFacetCounts(field, results, ...fulfilledSupplementalResults)
       );
     }
+    addMissingSingleValueFacetBuckets(results);
     results.hits = filteredHits.slice(0, requestedPerPage).map((hit: any) => ({
       ...hit,
       document: {

@@ -18,6 +18,8 @@ export function normalizeSearchText(value: string) {
 }
 
 export const manualSearchSynonyms: Array<[string, string[]]> = [
+  ["masks", ["masks", "face masks", "n95 masks", "n95 respirators", "respirators", "oxygen masks", "procedure face masks"]],
+  ["mask", ["mask", "masks", "face mask", "n95 mask", "respirator", "oxygen mask"]],
   ["gants", ["gloves", "medical gloves", "exam gloves", "nitrile gloves", "surgical gloves"]],
   ["gant", ["glove", "gloves"]],
   ["masques", ["masks", "face masks", "respirators"]],
