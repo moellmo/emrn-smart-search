@@ -341,11 +341,14 @@ export async function GET(req: NextRequest) {
   if (priceMin && !Number.isNaN(Number(priceMin))) filters.push(`price:>=${Number(priceMin)}`);
   if (priceMax && !Number.isNaN(Number(priceMax))) filters.push(`price:<=${Number(priceMax)}`);
 
+  const selectedCategoryTranslatedQuery = categoryIds.length > 0 && smartQuery.language === "fr";
+  const primarySearchQuery = selectedCategoryTranslatedQuery ? "*" : smartQuery.search_query || "*";
+
   const results: any = await typesenseSearch
     .collections(COLLECTION_NAME)
     .documents()
     .search({
-      q: smartQuery.search_query || "*",
+      q: primarySearchQuery,
       query_by:
         "sku,all_skus,name,parent_name,brand,sold_by,categories,variant_label,option_text,search_text,description,custom_fields_text",
       query_by_weights: "30,24,16,12,8,7,7,6,6,4,2,2",
