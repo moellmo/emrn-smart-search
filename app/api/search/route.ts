@@ -89,7 +89,23 @@ function categoryFamilyIdsForQuery(query: string, categories: BCCategory[]) {
   const normalized = normalizeSearchText(query);
   if (!normalized || normalized === "*" || normalized.length < 3 || /\d/.test(normalized)) return [];
 
-  const normalizedSingular = singularize(normalized);
+  const genericWords = new Set(["and", "for", "the", "with", "medical", "supply", "supplies", "product", "products"]);
+  const words = normalized.split(/\s+/).filter((word) => word.length >= 3 && !genericWords.has(word));
+  const phraseTerms = new Set<string>([normalized, singularize(normalized)]);
+  const wordTerms = new Set<string>();
+
+  for (let index = 0; index < words.length; index++) {
+    wordTerms.add(words[index]);
+    wordTerms.add(singularize(words[index]));
+    for (const size of [2, 3]) {
+      const phrase = words.slice(index, index + size).join(" ");
+      if (phrase.split(" ").length === size) {
+        phraseTerms.add(phrase);
+        phraseTerms.add(singularize(phrase));
+      }
+    }
+  }
+
   const byParent = new Map<number, BCCategory[]>();
   const matched = new Set<number>();
   const ids = new Set<number>();
@@ -101,12 +117,14 @@ function categoryFamilyIdsForQuery(query: string, categories: BCCategory[]) {
 
     const categoryName = normalizeSearchText(category.name);
     const categorySingular = singularize(categoryName);
-    if (
-      categoryName === normalized ||
-      categorySingular === normalizedSingular ||
-      categoryName.includes(normalized) ||
-      categoryName.includes(normalizedSingular)
-    ) {
+    const phraseMatches = Array.from(phraseTerms).some(
+      (term) => categoryName === term || categorySingular === term || categoryName.includes(term) || term.includes(categoryName)
+    );
+    const wordMatches = Array.from(wordTerms).some((term) => {
+      const root = singularize(term);
+      return categoryName === term || categorySingular === term || categorySingular === root || categoryName.includes(term);
+    });
+    if (phraseMatches || wordMatches) {
       matched.add(Number(category.id));
     }
   }
@@ -294,7 +312,12 @@ export async function GET(req: NextRequest) {
   const smartQuery = await buildSmartSearchQuery(q);
   const categoryFamilyIds =
     !categoryIds.length && !category && q !== "*"
-      ? categoryFamilyIdsForQuery(q, await fetchSearchCategories()).filter((id) => id !== AED_CATEGORY_ID)
+      ? Array.from(
+          new Set([
+            ...categoryFamilyIdsForQuery(q, await fetchSearchCategories()),
+            ...categoryFamilyIdsForQuery(smartQuery.search_query, await fetchSearchCategories()),
+          ])
+        ).filter((id) => id !== AED_CATEGORY_ID)
       : [];
   const filters: string[] = ["is_visible:=true"];
 
