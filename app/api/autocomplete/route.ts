@@ -4,9 +4,9 @@ import { buildSmartSearchQuery } from "../../../lib/smart-search-translator";
 import { normalizeSearchText } from "../../../lib/search-language";
 import { applyBrandQueryRanking, applyHiddenSkuFilter, applyIntentRanking, applyPinnedSkuRanking, applyPrivateCategoryFilter } from "../../../lib/search-ranking";
 import { getEffectiveSearchOverrides } from "../../../lib/search-overrides";
+import { STORE_URL, absoluteStoreUrl } from "../../../lib/store-url";
 
 const COLLECTION_NAME = "emrn_products";
-const STORE_URL = process.env.EMRN_STORE_URL || "https://emrn.ca";
 const AED_CATEGORY_ID = 160;
 
 const corsHeaders = {
@@ -14,12 +14,6 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "GET, OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type",
 };
-
-function fixUrl(url: string | undefined) {
-  if (!url) return STORE_URL;
-  if (url.startsWith("http://") || url.startsWith("https://")) return url;
-  return `${STORE_URL}${url.startsWith("/") ? "" : "/"}${url}`;
-}
 
 function categoryUrlMapFromHits(hits: any[] = []) {
   const map = new Map<string, string>();
@@ -29,7 +23,7 @@ function categoryUrlMapFromHits(hits: any[] = []) {
     for (const pair of pairs) {
       const [name, ...urlParts] = String(pair).split("|");
       const url = urlParts.join("|");
-      if (name && url && !map.has(name)) map.set(name, url);
+      if (name && url && !map.has(name)) map.set(name, absoluteStoreUrl(url));
     }
   }
 
@@ -70,7 +64,7 @@ function normalizeHit(doc: any) {
     price: doc.price,
     sale_price: doc.sale_price,
     image: doc.image,
-    url: fixUrl(doc.url),
+    url: absoluteStoreUrl(doc.url),
     option_text: doc.option_text || "",
     variant_label: doc.variant_label || "",
     availability: doc.availability,

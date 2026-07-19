@@ -1,10 +1,10 @@
 import { stripHtml, normalizeSku, uniq } from "./clean";
+import { STORE_URL, absoluteStoreUrl } from "./store-url";
 
 const STORE_HASH = process.env.BIGCOMMERCE_STORE_HASH!;
 const ACCESS_TOKEN = process.env.BIGCOMMERCE_ACCESS_TOKEN!;
 const API_BASE = `https://api.bigcommerce.com/stores/${STORE_HASH}/v3`;
 const API_V2_BASE = `https://api.bigcommerce.com/stores/${STORE_HASH}/v2`;
-const STORE_URL = process.env.EMRN_STORE_URL || "https://emrn.ca";
 
 type BigCommerceListResponse<T> = {
   data: T[];
@@ -146,12 +146,6 @@ async function fetchAllPages<T>(path: string): Promise<T[]> {
   } while (page <= totalPages);
 
   return all;
-}
-
-function absoluteStoreUrl(path?: string) {
-  if (!path) return STORE_URL;
-  if (path.startsWith("http://") || path.startsWith("https://")) return path;
-  return `${STORE_URL}${path.startsWith("/") ? "" : "/"}${path}`;
 }
 
 function productImage(product: BCProduct) {

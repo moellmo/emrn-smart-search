@@ -320,13 +320,21 @@
       .filter(cat=>helpers.visibleIds.has(Number(cat.id)))
       .sort((a,b)=>a.name.localeCompare(b.name));
 
-    return children.map(cat=>{
-      const hasChildren=(categoryTreeCache.byParent.get(Number(cat.id))||[]).some(child=>helpers.visibleIds.has(Number(child.id)));
-      const isActive=Number(selectedId)===Number(cat.id)||(selectedName&&String(cat.name).toLowerCase()===String(selectedName).toLowerCase());
+    function branchCount(cat){
       const key=String(cat.name||"").toLowerCase();
       const filteredCount=helpers.countByName.get(key)||0;
       const catalogCount=helpers.catalogCountByName.get(key)||0;
-      const count=helpers.useScopedCounts?filteredCount:(isActive?(filteredCount||catalogCount):(catalogCount||filteredCount));
+      const direct=helpers.useScopedCounts?filteredCount:catalogCount||filteredCount;
+      if(direct)return direct;
+      return (categoryTreeCache.byParent.get(Number(cat.id))||[])
+        .filter(child=>helpers.visibleIds.has(Number(child.id)))
+        .reduce((sum,child)=>sum+branchCount(child),0);
+    }
+
+    return children.map(cat=>{
+      const hasChildren=(categoryTreeCache.byParent.get(Number(cat.id))||[]).some(child=>helpers.visibleIds.has(Number(child.id)));
+      const isActive=Number(selectedId)===Number(cat.id)||(selectedName&&String(cat.name).toLowerCase()===String(selectedName).toLowerCase());
+      const count=branchCount(cat);
       return `<div class="emrn-smart-cat-node" data-cat-node="${cat.id}" style="margin-left:${level?10:0}px"><div class="emrn-smart-cat-row ${isActive?"active":""}">${hasChildren?`<button type="button" class="emrn-smart-cat-toggle" data-cat-toggle="${cat.id}">+</button>`:`<span style="width:24px"></span>`}<button type="button" class="emrn-smart-cat-link" data-category-id="${cat.id}" title="${escapeHtml(cat.name)}">${escapeHtml(cat.name)}</button>${count?`<span class="emrn-smart-cat-count">${count}</span>`:""}</div>${hasChildren?`<div class="emrn-smart-cat-children" data-cat-children="${cat.id}">${renderCategoryBranch(cat.id,level+1,selectedId,selectedName,helpers)}</div>`:""}</div>`
     }).join("")
   }

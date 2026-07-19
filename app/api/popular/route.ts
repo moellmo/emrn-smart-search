@@ -2,9 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { typesenseSearch } from "../../../lib/typesense";
 import { applyHiddenSkuFilter, applyPrivateCategoryFilter } from "../../../lib/search-ranking";
 import { getEffectiveSearchOverrides } from "../../../lib/search-overrides";
+import { STORE_URL, absoluteStoreUrl } from "../../../lib/store-url";
 
 const COLLECTION_NAME = "emrn_products";
-const STORE_URL = process.env.EMRN_STORE_URL || "https://emrn.ca";
 const STORE_HASH = process.env.BIGCOMMERCE_STORE_HASH;
 const ACCESS_TOKEN = process.env.BIGCOMMERCE_ACCESS_TOKEN;
 const API_V2_BASE = `https://api.bigcommerce.com/stores/${STORE_HASH}/v2`;
@@ -14,12 +14,6 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "GET, OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type",
 };
-
-function fixUrl(url: string | undefined) {
-  if (!url) return STORE_URL;
-  if (url.startsWith("http://") || url.startsWith("https://")) return url;
-  return `${STORE_URL}${url.startsWith("/") ? "" : "/"}${url}`;
-}
 
 function normalizeHit(doc: any) {
   return {
@@ -35,7 +29,7 @@ function normalizeHit(doc: any) {
     price: doc.price,
     sale_price: doc.sale_price,
     image: doc.image,
-    url: fixUrl(doc.url),
+    url: absoluteStoreUrl(doc.url),
     option_text: doc.option_text || "",
     variant_label: doc.variant_label || "",
     availability: doc.availability,

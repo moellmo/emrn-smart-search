@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
 import { typesenseSearch } from "../../../lib/typesense";
 import { getEffectiveSearchOverrides, getHiddenCategoryRules } from "../../../lib/search-overrides";
+import { absoluteStoreUrl } from "../../../lib/store-url";
 
 const STORE_HASH = process.env.BIGCOMMERCE_STORE_HASH!;
 const ACCESS_TOKEN = process.env.BIGCOMMERCE_ACCESS_TOKEN!;
 const API_BASE = `https://api.bigcommerce.com/stores/${STORE_HASH}/v3`;
-const STORE_URL = process.env.EMRN_STORE_URL || "https://emrn.ca";
 const COLLECTION_NAME = "emrn_products";
 
 const corsHeaders = {
@@ -42,12 +42,6 @@ let rawCategoryCache: {
   categories: BCCategory[];
   catalogCounts: Map<string, number>;
 } | null = null;
-
-function absoluteStoreUrl(path?: string) {
-  if (!path) return STORE_URL;
-  if (path.startsWith("http://") || path.startsWith("https://")) return path;
-  return `${STORE_URL}${path.startsWith("/") ? "" : "/"}${path}`;
-}
 
 async function bcFetch<T>(path: string): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {

@@ -4,9 +4,9 @@ import { buildSmartSearchQuery } from "../../../lib/smart-search-translator";
 import { normalizeSearchText } from "../../../lib/search-language";
 import { applyBrandQueryRanking, applyHiddenSkuFilter, applyIntentRanking, applyPinnedSkuRanking, applyPrivateCategoryFilter, explainResult } from "../../../lib/search-ranking";
 import { getEffectiveSearchOverrides, getPinnedSkusForQuery } from "../../../lib/search-overrides";
+import { STORE_URL, absoluteStoreUrl } from "../../../lib/store-url";
 
 const COLLECTION_NAME = "emrn_products";
-const STORE_URL = process.env.EMRN_STORE_URL || "https://emrn.ca";
 const STORE_HASH = process.env.BIGCOMMERCE_STORE_HASH!;
 const ACCESS_TOKEN = process.env.BIGCOMMERCE_ACCESS_TOKEN!;
 const BIGCOMMERCE_API_BASE = `https://api.bigcommerce.com/stores/${STORE_HASH}/v3`;
@@ -30,12 +30,6 @@ type BCCategory = {
 };
 
 let categoryCache: { expiresAt: number; categories: BCCategory[] } | null = null;
-
-function fixUrl(url: string | undefined) {
-  if (!url) return STORE_URL;
-  if (url.startsWith("http://") || url.startsWith("https://")) return url;
-  return `${STORE_URL}${url.startsWith("/") ? "" : "/"}${url}`;
-}
 
 function normalizeSort(sort: string | null) {
   switch (sort) {
@@ -453,7 +447,7 @@ export async function GET(req: NextRequest) {
       ...hit,
       document: {
         ...hit.document,
-        url: fixUrl(hit.document?.url),
+        url: absoluteStoreUrl(hit.document?.url),
         sold_by: hit.document?.sold_by || "",
         color: hit.document?.color || "",
         variant_id: hit.document?.variant_id || 0,
