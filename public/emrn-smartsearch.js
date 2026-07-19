@@ -283,13 +283,16 @@
       return include;
     }
 
-    if(selectedId&&!useScopedCounts){
-      const selected=byId.get(Number(selectedId));
-      if(selected){
-        markAncestors(selected);
-        markCatalogBranch(selected);
-        return {visibleIds,countByName,catalogCountByName,useScopedCounts};
+    if(!useScopedCounts){
+      (categoryTreeCache?.cats||[]).forEach(cat=>{if(hasOwnCount(cat))visibleIds.add(Number(cat.id))});
+      if(selectedId){
+        const selected=byId.get(Number(selectedId));
+        if(selected){
+          markAncestors(selected);
+          markCatalogBranch(selected);
+        }
       }
+      return {visibleIds,countByName,catalogCountByName,useScopedCounts};
     }
 
     function markDescendantsWithResults(cat){
