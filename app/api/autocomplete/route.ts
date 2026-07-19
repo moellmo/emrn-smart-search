@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { typesenseSearch } from "../../../lib/typesense";
 import { buildSmartSearchQuery } from "../../../lib/smart-search-translator";
-import { applyHiddenSkuFilter, applyIntentRanking, applyPinnedSkuRanking, applyPrivateCategoryFilter } from "../../../lib/search-ranking";
+import { normalizeSearchText } from "../../../lib/search-language";
+import { applyBrandQueryRanking, applyHiddenSkuFilter, applyIntentRanking, applyPinnedSkuRanking, applyPrivateCategoryFilter } from "../../../lib/search-ranking";
 import { getEffectiveSearchOverrides } from "../../../lib/search-overrides";
 
 const COLLECTION_NAME = "emrn_products";
 const STORE_URL = process.env.EMRN_STORE_URL || "https://emrn.ca";
+const AED_CATEGORY_ID = 160;
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -80,6 +82,52 @@ function normalizeHit(doc: any) {
   };
 }
 
+function hitKey(hit: any) {
+  const doc = hit.document || {};
+  return String(doc.id || `${doc.product_id || ""}:${doc.variant_id || ""}:${doc.sku || ""}`);
+}
+
+function mergeHits(...groups: any[][]) {
+  const seen = new Set<string>();
+  const merged: any[] = [];
+
+  for (const group of groups) {
+    for (const hit of group || []) {
+      const key = hitKey(hit);
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      merged.push(hit);
+    }
+  }
+
+  return merged;
+}
+
+function isAedUnitQuery(query: string) {
+  const normalized = normalizeSearchText(query);
+  if (!normalized || normalized === "*") return false;
+  const accessoryWords = ["pad", "pads", "electrode", "electrodes", "battery", "batteries", "cabinet", "case", "sign", "trainer", "training", "accessory", "accessories", "bracket", "mount"];
+  if (accessoryWords.some((word) => normalized.includes(word))) return false;
+  return [
+    "aed",
+    "defib",
+    "defibrillator",
+    "defibrillators",
+    "defibrillation",
+    "dea",
+    "defibrillateur",
+    "défibrillateur",
+  ].some((term) => normalized === normalizeSearchText(term) || normalized.includes(normalizeSearchText(term)));
+}
+
+function isLikelyBrandQuery(query: string) {
+  const normalized = normalizeSearchText(query);
+  if (!normalized || normalized === "*") return false;
+  if (isAedUnitQuery(query)) return false;
+  const words = normalized.split(" ").filter(Boolean);
+  return words.length <= 3 && normalized.length <= 40 && /^[a-z0-9 &.'+-]+$/.test(normalized);
+}
+
 export async function OPTIONS() {
   return new NextResponse(null, { status: 204, headers: corsHeaders });
 }
@@ -113,8 +161,61 @@ export async function GET(req: NextRequest) {
       highlight_full_fields: "name,sku,brand,sold_by,categories,variant_label,option_text",
     });
 
+  const supplementalSearches: Promise<any>[] = [];
+
+  if (isAedUnitQuery(q)) {
+    supplementalSearches.push(
+      typesenseSearch
+        .collections(COLLECTION_NAME)
+        .documents()
+        .search({
+          q: "*",
+          query_by: "sku,all_skus,name,parent_name,brand,categories,search_text",
+          filter_by: `is_visible:=true && category_ids:=[${AED_CATEGORY_ID}]`,
+          facet_by: "brand,categories",
+          max_facet_values: 24,
+          per_page: 48,
+        })
+    );
+  }
+
+  if (isLikelyBrandQuery(q)) {
+    supplementalSearches.push(
+      typesenseSearch
+        .collections(COLLECTION_NAME)
+        .documents()
+        .search({
+          q,
+          query_by: "brand",
+          query_by_weights: "10",
+          filter_by: "is_visible:=true",
+          facet_by: "brand,categories",
+          max_facet_values: 24,
+          per_page: 48,
+          num_typos: 1,
+          typo_tokens_threshold: 1,
+          prefix: true,
+          highlight_full_fields: "brand",
+        })
+    );
+  }
+
+  const supplementalResults = supplementalSearches.length
+    ? await Promise.allSettled(supplementalSearches)
+    : [];
+  const supplementalHits = supplementalResults.flatMap((result) =>
+    result.status === "fulfilled" ? result.value?.hits || [] : []
+  );
+
   const hits = applyPinnedSkuRanking(
-    applyIntentRanking(applyPrivateCategoryFilter(applyHiddenSkuFilter(results.hits || [], controls), customerId, controls), q, smartQuery.search_query),
+    applyBrandQueryRanking(
+      applyIntentRanking(
+        applyPrivateCategoryFilter(applyHiddenSkuFilter(mergeHits(supplementalHits, results.hits || []), controls), customerId, controls),
+        q,
+        smartQuery.search_query
+      ),
+      q
+    ),
     q,
     controls
   );

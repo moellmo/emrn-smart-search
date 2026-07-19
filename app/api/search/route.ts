@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { typesenseSearch } from "../../../lib/typesense";
 import { buildSmartSearchQuery } from "../../../lib/smart-search-translator";
-import { applyHiddenSkuFilter, applyIntentRanking, applyPinnedSkuRanking, applyPrivateCategoryFilter, explainResult } from "../../../lib/search-ranking";
+import { normalizeSearchText } from "../../../lib/search-language";
+import { applyBrandQueryRanking, applyHiddenSkuFilter, applyIntentRanking, applyPinnedSkuRanking, applyPrivateCategoryFilter, explainResult } from "../../../lib/search-ranking";
 import { getEffectiveSearchOverrides, getPinnedSkusForQuery } from "../../../lib/search-overrides";
 
 const COLLECTION_NAME = "emrn_products";
 const STORE_URL = process.env.EMRN_STORE_URL || "https://emrn.ca";
+const AED_CATEGORY_ID = 160;
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -35,6 +37,52 @@ function normalizeSort(sort: string | null) {
     default:
       return "_text_match:desc,popularity_score:desc,product_id:desc";
   }
+}
+
+function hitKey(hit: any) {
+  const doc = hit.document || {};
+  return String(doc.id || `${doc.product_id || ""}:${doc.variant_id || ""}:${doc.sku || ""}`);
+}
+
+function mergeHits(...groups: any[][]) {
+  const seen = new Set<string>();
+  const merged: any[] = [];
+
+  for (const group of groups) {
+    for (const hit of group || []) {
+      const key = hitKey(hit);
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      merged.push(hit);
+    }
+  }
+
+  return merged;
+}
+
+function isAedUnitQuery(query: string) {
+  const normalized = normalizeSearchText(query);
+  if (!normalized || normalized === "*") return false;
+  const accessoryWords = ["pad", "pads", "electrode", "electrodes", "battery", "batteries", "cabinet", "case", "sign", "trainer", "training", "accessory", "accessories", "bracket", "mount"];
+  if (accessoryWords.some((word) => normalized.includes(word))) return false;
+  return [
+    "aed",
+    "defib",
+    "defibrillator",
+    "defibrillators",
+    "defibrillation",
+    "dea",
+    "defibrillateur",
+    "défibrillateur",
+  ].some((term) => normalized === normalizeSearchText(term) || normalized.includes(normalizeSearchText(term)));
+}
+
+function isLikelyBrandQuery(query: string) {
+  const normalized = normalizeSearchText(query);
+  if (!normalized || normalized === "*") return false;
+  if (isAedUnitQuery(query)) return false;
+  const words = normalized.split(" ").filter(Boolean);
+  return words.length <= 3 && normalized.length <= 40 && /^[a-z0-9 &.'+-]+$/.test(normalized);
 }
 
 function facetCountsFromHits(hits: any[] = [], field: string, limit = 80) {
@@ -129,8 +177,65 @@ export async function GET(req: NextRequest) {
     });
 
   if (results.hits) {
+    const supplementalSearches: Promise<any>[] = [];
+    const supplementalBase = filters.join(" && ");
+
+    if (isAedUnitQuery(q) && !category && !(categoryId && Number(categoryId) > 0)) {
+      supplementalSearches.push(
+        typesenseSearch
+          .collections(COLLECTION_NAME)
+          .documents()
+          .search({
+            q: "*",
+            query_by: "sku,all_skus,name,parent_name,brand,categories,search_text",
+            filter_by: [supplementalBase, `category_ids:=[${AED_CATEGORY_ID}]`].filter(Boolean).join(" && "),
+            facet_by: "brand,categories,sold_by,color,price,availability",
+            max_facet_values: 80,
+            sort_by: normalizeSort(sort),
+            per_page: Math.min(requestedPerPage * 3, 100),
+            page,
+          })
+      );
+    }
+
+    if (isLikelyBrandQuery(q) && !brand) {
+      supplementalSearches.push(
+        typesenseSearch
+          .collections(COLLECTION_NAME)
+          .documents()
+          .search({
+            q,
+            query_by: "brand",
+            query_by_weights: "10",
+            filter_by: supplementalBase,
+            facet_by: "brand,categories,sold_by,color,price,availability",
+            max_facet_values: 80,
+            sort_by: normalizeSort(sort),
+            per_page: Math.min(requestedPerPage * 3, 100),
+            page,
+            num_typos: 1,
+            typo_tokens_threshold: 1,
+            prefix: true,
+          })
+      );
+    }
+
+    const supplementalResults = supplementalSearches.length
+      ? await Promise.allSettled(supplementalSearches)
+      : [];
+    const supplementalHits = supplementalResults.flatMap((result) =>
+      result.status === "fulfilled" ? result.value?.hits || [] : []
+    );
+
     const filteredHits = applyPinnedSkuRanking(
-      applyIntentRanking(applyPrivateCategoryFilter(applyHiddenSkuFilter(results.hits, controls), customerId, controls), q, smartQuery.search_query),
+      applyBrandQueryRanking(
+        applyIntentRanking(
+          applyPrivateCategoryFilter(applyHiddenSkuFilter(mergeHits(supplementalHits, results.hits), controls), customerId, controls),
+          q,
+          smartQuery.search_query
+        ),
+        q
+      ),
       q,
       controls
     );

@@ -66,6 +66,24 @@ export function applyPinnedSkuRanking(hits: any[] = [], originalQuery: string, c
   });
 }
 
+export function applyBrandQueryRanking(hits: any[] = [], originalQuery: string) {
+  const normalizedQuery = normalizeSearchText(originalQuery);
+  if (!hits.length || !normalizedQuery || normalizedQuery === "*") return hits;
+  const words = normalizedQuery.split(" ").filter(Boolean);
+  if (words.length > 3 || normalizedQuery.length > 40) return hits;
+
+  const brandScore = (hit: any) => {
+    const brand = normalizeSearchText(String(hit.document?.brand || ""));
+    if (!brand) return 0;
+    if (brand === normalizedQuery) return 3;
+    if (brand.startsWith(normalizedQuery)) return 2;
+    if (brand.includes(normalizedQuery)) return 1;
+    return 0;
+  };
+
+  return [...hits].sort((a, b) => brandScore(b) - brandScore(a));
+}
+
 function docText(hit: any) {
   const doc = hit.document || {};
   return normalizeSearchText([

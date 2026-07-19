@@ -55,11 +55,11 @@ export const defaultSearchOverrides: SearchOverrides = {
   privateCategoryRules: [],
 
   boostTerms: {
-    aed: ["defibrillator", "defibrillators", "automated external defibrillator", "Philips AED", "ZOLL AED", "Physio Control AED"],
-    "aed defibrillation": ["defibrillator", "defibrillators", "Philips AED", "ZOLL AED", "Physio Control AED"],
-    defibrillation: ["defibrillator", "defibrillators", "AED", "Philips AED", "ZOLL AED", "Physio Control AED"],
-    defibrillator: ["AED", "defibrillators", "automated external defibrillator", "Philips AED", "ZOLL AED", "Physio Control AED"],
-    defibrillators: ["AED", "defibrillator", "automated external defibrillator", "Philips AED", "ZOLL AED", "Physio Control AED"],
+    aed: ["defibrillator", "defibrillators", "automated external defibrillator"],
+    "aed defibrillation": ["defibrillator", "defibrillators", "automated external defibrillator"],
+    defibrillation: ["defibrillator", "defibrillators", "AED", "automated external defibrillator"],
+    defibrillator: ["AED", "defibrillators", "automated external defibrillator"],
+    defibrillators: ["AED", "defibrillator", "automated external defibrillator"],
     "aed pads": ["defibrillator pads", "aed electrodes"],
     "bp cuff": ["blood pressure cuff", "sphygmomanometer"],
     "blood pressure machine": ["blood pressure monitor", "sphygmomanometer"],
