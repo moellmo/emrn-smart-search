@@ -328,6 +328,45 @@ const bagDemoteTerms = [
   "pad sterile",
 ];
 
+const firstAidKitTerms = [
+  "first aid kit",
+  "first aid kits",
+  "csa first aid kit",
+  "type 1 first aid kit",
+  "type 2 first aid kit",
+  "type 3 first aid kit",
+  "emergency kit",
+  "trauma kit",
+  "ifak",
+  "medical kit",
+  "response kit",
+  "kit",
+];
+
+const firstAidKitDemoteTerms = [
+  "bandage",
+  "bandages",
+  "gauze",
+  "sponge",
+  "sponges",
+  "dressing",
+  "dressings",
+  "tape",
+  "refill",
+  "replacement",
+  "bottle",
+  "pads",
+  "pad",
+  "wipe",
+  "wipes",
+  "compress",
+  "compresses",
+  "tourniquet",
+  "splint",
+  "accessory",
+  "accessories",
+];
+
 const patientMonitorUnitTerms = [
   "patient monitor",
   "patient monitors",
@@ -489,6 +528,13 @@ export function applyIntentRanking(hits: any[] = [], originalQuery: string, sear
       skipDemote: isAccessoryQuery,
     },
     {
+      match: ["first aid kit", "first aid kits", "trousse de premiers soins", "trousses de premiers soins", "trousse de premiers secours", "trousses de premiers secours", "trousse premiers soins", "trousses premiers soins", "trousse premiers secours", "trousses premiers secours"],
+      prefer: firstAidKitTerms,
+      preferStrong: ["first aid kit", "first aid kits", "csa first aid kit", "type 1 first aid kit", "type 2 first aid kit", "type 3 first aid kit", "emergency kit", "trauma kit", "medical kit", "ifak"],
+      demote: firstAidKitDemoteTerms,
+      demoteStrong: firstAidKitDemoteTerms,
+    },
+    {
       match: ["medical bag", "medical bags", "medic bag", "medic bags", "trauma bag", "trauma bags", "ems bag", "emt bag", "first aid bag", "first aid bags", "jump bag", "jump bags", "rescue bag", "rescue bags"],
       prefer: bagIntentTerms,
       preferStrong: ["medical bag", "medical bags", "first aid bag", "first aid bags", "trauma bag", "trauma bags", "ems bag", "emt bag", "jump bag", "jump bags", "rescue bag", "rescue bags", "oxygen bag", "oxygen bags", "backpack", "pouch"],
@@ -527,6 +573,14 @@ export function applyIntentRanking(hits: any[] = [], originalQuery: string, sear
     const categoryText = ` ${docCategories(hit).join(" ")} `;
     let intentScore = categoryPhraseScore(hit, originalQuery, searchQuery);
     const textScore = Number(hit.text_match || hit._text_match || 0);
+    const isFirstAidKitQuery = hasAny(query, ["first aid kit", "first aid kits", "trousse de premiers soins", "trousses de premiers soins", "trousse de premiers secours", "trousses de premiers secours", "trousse premiers soins", "trousses premiers soins", "trousse premiers secours", "trousses premiers secours"]);
+    if (isFirstAidKitQuery) {
+      const nameLooksLikeKit = hasAny(nameText, firstAidKitTerms);
+      const nameLooksLikeLooseSupply = hasAny(nameText, firstAidKitDemoteTerms);
+      if (nameLooksLikeKit && !nameLooksLikeLooseSupply) intentScore += 320;
+      else if (nameLooksLikeKit) intentScore += 160;
+      else intentScore -= 420;
+    }
     const isMedicalBagQuery = hasAny(query, ["medical bag", "medical bags", "medic bag", "medic bags", "trauma bag", "trauma bags", "ems bag", "emt bag", "first aid bag", "first aid bags", "jump bag", "jump bags", "rescue bag", "rescue bags"]);
     if (isMedicalBagQuery) {
       const inMedicalBags = categoryText.includes(" medical bags ");
