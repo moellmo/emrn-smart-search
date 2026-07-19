@@ -160,6 +160,7 @@ function includesAny(text: string, terms: string[]) {
 }
 
 function autocompleteRecallQueries(originalQuery: string, translatedQuery: string) {
+  const original = normalizeSearchText(originalQuery);
   const query = normalizeSearchText(`${originalQuery} ${translatedQuery}`);
   const recalls: string[] = [];
   const add = (...terms: string[]) => {
@@ -185,7 +186,7 @@ function autocompleteRecallQueries(originalQuery: string, translatedQuery: strin
     add("oxygen mask", "oxygen masks", "non-rebreather mask", "high concentration oxygen mask");
   }
   if (includesAny(query, ["medical bag", "medical bags", "medic bag", "medic bags", "trauma bag", "trauma bags", "ems bag", "emt bag", "jump bag", "jump bags", "sac medical", "sac médical", "sacs medicaux", "sacs médicaux"])) {
-    add("medical bag", "medical bags", "trauma bag", "ems bag", "medical backpack", "statpacks");
+    add("medical bag", "trauma bag", "ems bag", "medical backpack");
   }
   if (includesAny(query, ["qcpr", "q cpr", "little baby", "little family", "little junior", "little anne", "baby qcpr", "family qcpr", "junior qcpr"])) {
     add(originalQuery, "little baby qcpr", "little family qcpr", "little junior qcpr", "little anne qcpr", "qcpr manikin");
@@ -194,7 +195,7 @@ function autocompleteRecallQueries(originalQuery: string, translatedQuery: strin
     add("cpr pocket mask", "pocket mask", "cpr mask", "face shield");
   }
 
-  return recalls.slice(0, 6);
+  return recalls.slice(0, original.split(" ").length > 2 ? 4 : 5);
 }
 
 export async function OPTIONS() {
@@ -222,8 +223,8 @@ export async function GET(req: NextRequest) {
       query_by_weights: "30,24,16,12,8,7,6,5,5,3",
       filter_by: "is_visible:=true",
       facet_by: "brand,categories",
-      max_facet_values: 24,
-      per_page: 48,
+      max_facet_values: 16,
+      per_page: 32,
       num_typos: 2,
       typo_tokens_threshold: 1,
       prefix: true,
@@ -242,8 +243,8 @@ export async function GET(req: NextRequest) {
           query_by: "sku,all_skus,name,parent_name,brand,categories,search_text",
           filter_by: `is_visible:=true && category_ids:=[${AED_CATEGORY_ID}]`,
           facet_by: "brand,categories",
-          max_facet_values: 24,
-          per_page: 48,
+          max_facet_values: 16,
+          per_page: 28,
         })
     );
   }
@@ -258,8 +259,8 @@ export async function GET(req: NextRequest) {
           query_by: "sku,all_skus,name,parent_name,brand,categories,search_text",
           filter_by: `is_visible:=true && categories:=${JSON.stringify(categoryName)}`,
           facet_by: "brand,categories",
-          max_facet_values: 24,
-          per_page: 48,
+          max_facet_values: 16,
+          per_page: 28,
         })
     );
   }
@@ -275,8 +276,8 @@ export async function GET(req: NextRequest) {
           query_by_weights: "26,22,14,8,8,6,4,3,2",
           filter_by: "is_visible:=true",
           facet_by: "brand,categories",
-          max_facet_values: 24,
-          per_page: 36,
+          max_facet_values: 16,
+          per_page: 24,
           num_typos: 1,
           typo_tokens_threshold: 1,
           prefix: true,
@@ -296,8 +297,8 @@ export async function GET(req: NextRequest) {
           query_by_weights: "10",
           filter_by: "is_visible:=true",
           facet_by: "brand,categories",
-          max_facet_values: 24,
-          per_page: 48,
+          max_facet_values: 16,
+          per_page: 28,
           num_typos: 1,
           typo_tokens_threshold: 1,
           prefix: true,

@@ -381,6 +381,9 @@ export async function GET(req: NextRequest) {
   const sort = searchParams.get("sort") || "popularity";
   const customerId = searchParams.get("customer_id") || "";
   const requestedPerPage = Math.min(Math.max(perPage, 1), 48);
+  const primaryFetchSize = page === 1 ? Math.min(requestedPerPage * 8, 160) : Math.min(requestedPerPage * 3, 96);
+  const supplementalFetchSize = page === 1 ? Math.min(requestedPerPage * 4, 96) : Math.min(requestedPerPage * 2, 60);
+  const facetLimit = page === 1 ? 600 : 160;
 
   const controls = await getEffectiveSearchOverrides();
   const smartQuery = await buildSmartSearchQuery(q);
@@ -423,9 +426,9 @@ export async function GET(req: NextRequest) {
       query_by_weights: "30,24,16,12,8,7,7,6,6,4,2,2",
       filter_by: filters.join(" && "),
       facet_by: "brand,categories,sold_by,color,price,availability",
-      max_facet_values: 1000,
+      max_facet_values: facetLimit,
       sort_by: normalizeSort(sort),
-      per_page: Math.min(requestedPerPage * 12, 250),
+      per_page: primaryFetchSize,
       limit_hits: SEARCH_HIT_LIMIT,
       page,
       num_typos: 2,
@@ -449,9 +452,9 @@ export async function GET(req: NextRequest) {
               query_by: "sku,all_skus,name,parent_name,brand,categories,search_text",
               filter_by: [supplementalBase, `category_ids:=[${AED_CATEGORY_ID}]`].filter(Boolean).join(" && "),
               facet_by: "brand,categories,sold_by,color,price,availability",
-              max_facet_values: 1000,
+              max_facet_values: facetLimit,
               sort_by: normalizeSort(sort),
-              per_page: Math.min(requestedPerPage * 12, 250),
+              per_page: supplementalFetchSize,
               limit_hits: SEARCH_HIT_LIMIT,
               page,
             }),
@@ -471,9 +474,9 @@ export async function GET(req: NextRequest) {
               query_by: "sku,all_skus,name,parent_name,brand,categories,search_text",
               filter_by: [supplementalBase, `category_ids:=[${categoryFamilyIds.join(",")}]`].filter(Boolean).join(" && "),
               facet_by: "brand,categories,sold_by,color,price,availability",
-              max_facet_values: 1000,
+              max_facet_values: facetLimit,
               sort_by: normalizeSort(sort),
-              per_page: Math.min(requestedPerPage * 12, 250),
+              per_page: supplementalFetchSize,
               limit_hits: SEARCH_HIT_LIMIT,
               page,
             }),
@@ -495,9 +498,9 @@ export async function GET(req: NextRequest) {
               query_by_weights: "30,24,16,12,8,7,7,6,6,4,2,2",
               filter_by: supplementalBase,
               facet_by: "brand,categories,sold_by,color,price,availability",
-              max_facet_values: 1000,
+              max_facet_values: Math.min(facetLimit, 300),
               sort_by: normalizeSort(sort),
-              per_page: Math.min(requestedPerPage * 8, 180),
+              per_page: supplementalFetchSize,
               limit_hits: SEARCH_HIT_LIMIT,
               page,
               num_typos: 1,
@@ -521,9 +524,9 @@ export async function GET(req: NextRequest) {
               query_by_weights: "10",
               filter_by: supplementalBase,
               facet_by: "brand,categories,sold_by,color,price,availability",
-              max_facet_values: 1000,
+              max_facet_values: facetLimit,
               sort_by: normalizeSort(sort),
-              per_page: Math.min(requestedPerPage * 12, 250),
+              per_page: supplementalFetchSize,
               limit_hits: SEARCH_HIT_LIMIT,
               page,
               num_typos: 1,
