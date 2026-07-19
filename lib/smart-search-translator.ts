@@ -171,7 +171,7 @@ export async function buildSmartSearchQuery(query: string): Promise<SmartQueryRe
     original.length >= 3 &&
     !manual.expansions.length &&
     looksNaturalLanguage &&
-    (language === "fr" || wordCount <= 4);
+    language === "fr";
 
   if (shouldUseAI) {
     const ai = await translateWithOpenAI(original, language);
