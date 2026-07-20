@@ -407,6 +407,19 @@ export default function SmartSearchAdminPage() {
     setStatus(`${cleanSku} added to the front of the pinned SKU order. Click Add / update pins, then Save.`);
   }
 
+  function clearSpecificSearchControl() {
+    setControlTerm("");
+    setControlPinnedSkus("");
+    setControlSynonyms("");
+    setControlSuggestions("");
+    setPreviewProducts([]);
+    setPreviewStatus("");
+    setPreviewPage(0);
+    setPreviewFound(0);
+    setPreviewHasMore(false);
+    setStatus("Specific Search Control cleared.");
+  }
+
   async function loadLiveResults() {
     await loadPreviewPage(1, false);
   }
@@ -566,6 +579,7 @@ export default function SmartSearchAdminPage() {
               <button onClick={() => void loadLiveResults()} style={buttonStyle("#166534")}>{previewLoading ? "Loading..." : `Load first ${PREVIEW_PAGE_SIZE}`}</button>
               <button onClick={openAutocompleteTest} style={outlineButtonStyle}>Test autocomplete</button>
               <button onClick={openSearchTest} style={outlineButtonStyle}>Test full search</button>
+              <button onClick={clearSpecificSearchControl} style={outlineButtonStyle}>Clear fields</button>
             </div>
             <p style={{ margin: "12px 0 0", color: "#64748b", lineHeight: 1.45 }}>
               Synonyms broaden what SmartSearch looks for. Pins are stronger: they force chosen SKUs to the top for that search term.
