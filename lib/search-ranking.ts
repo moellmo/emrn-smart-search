@@ -787,6 +787,34 @@ const dressingDemoteTerms = [
   "bag",
 ];
 
+const scissorsTerms = [
+  "scissors",
+  "scissor",
+  "medical scissors",
+  "bandage scissors",
+  "dressing scissors",
+  "surgical scissors",
+  "operating scissors",
+  "shears",
+  "ciseaux",
+  "ciseau",
+  "ciseaux a pansements",
+  "ciseaux à pansements",
+];
+
+const scissorsDemoteTerms = [
+  "bandage",
+  "bandages",
+  "adhesive bandage",
+  "dressing",
+  "dressings",
+  "gauze",
+  "compress",
+  "compresses",
+  "manikin",
+  "simulator",
+];
+
 const scalpelTerms = [
   "scalpel",
   "scalpels",
@@ -1062,14 +1090,14 @@ export function applyIntentRanking(hits: any[] = [], originalQuery: string, sear
       else if (nameLooksLikeUnit) intentScore += 90;
       if (nameLooksLikeAccessory) intentScore -= 340;
     }
-    const isCprMaskQuery = hasAny(query, ["cpr mask", "cpr masks", "masque rcr", "masques rcr", "rcr mask", "rcr masks"]);
+    const isCprMaskQuery = hasAny(originalNormalizedQuery, ["cpr mask", "cpr masks", "masque rcr", "masques rcr", "rcr mask", "rcr masks"]);
     if (isCprMaskQuery) {
       const nameLooksLikeCprMask = hasAny(nameText, cprMaskTerms);
-      if (nameLooksLikeCprMask) intentScore += 340;
-      else intentScore -= 520;
+      if (nameLooksLikeCprMask) intentScore += 520;
+      else intentScore -= 680;
       if (hasAny(nameText, cprMaskDemoteTerms)) intentScore -= 360;
     }
-    const isOxygenMaskQuery = hasAny(query, ["oxygen mask", "oxygen masks", "masque oxygene", "masque oxygène", "masque d oxygene", "masque d’oxygène", "masques oxygene", "masques oxygène"]);
+    const isOxygenMaskQuery = hasAny(originalNormalizedQuery, ["oxygen mask", "oxygen masks", "masque oxygene", "masque oxygène", "masque d oxygene", "masque d’oxygène", "masques oxygene", "masques oxygène"]);
     if (isOxygenMaskQuery) {
       const nameLooksLikeOxygenMask = hasAny(nameText, oxygenMaskTerms) || categoryText.includes(" oxygen masks ");
       if (nameLooksLikeOxygenMask) intentScore += 460;
@@ -1098,7 +1126,14 @@ export function applyIntentRanking(hits: any[] = [], originalQuery: string, sear
       else intentScore -= 620;
       if (hasAny(nameText, gloveDemoteTerms)) intentScore -= 420;
     }
-    const isDressingQuery = hasAny(query, ["bandaid", "bandaids", "band aid", "band aids", "band-aid", "band-aids", "bandage", "bandages", "pansement", "pansements", "wound dressing", "wound dressings", "dressing", "dressings"]);
+    const isScissorsQuery = hasAny(originalNormalizedQuery, ["scissors", "scissor", "ciseaux", "ciseau", "ciseaux a pansements", "ciseaux à pansements", "medical scissors", "bandage scissors", "dressing scissors"]);
+    if (isScissorsQuery) {
+      const nameLooksLikeScissors = hasAny(nameText, scissorsTerms);
+      if (nameLooksLikeScissors) intentScore += 620;
+      else intentScore -= 760;
+      if (!nameLooksLikeScissors && hasAny(nameText, scissorsDemoteTerms)) intentScore -= 420;
+    }
+    const isDressingQuery = !isScissorsQuery && hasAny(originalNormalizedQuery, ["bandaid", "bandaids", "band aid", "band aids", "band-aid", "band-aids", "bandage", "bandages", "pansement", "pansements", "wound dressing", "wound dressings", "dressing", "dressings"]);
     if (isDressingQuery) {
       const nameLooksLikeDressing = hasAny(nameText, dressingTerms);
       const categoryLooksLikeDressing = hasAny(categoryText, ["first aid", "wound care", "bandage", "bandages", "dressing", "dressings", "gauze"]);
