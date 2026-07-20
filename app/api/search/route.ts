@@ -227,7 +227,9 @@ function includesAny(text: string, terms: string[]) {
 }
 
 function supplementalRecallQueries(originalQuery: string, translatedQuery: string) {
+  const original = normalizeSearchText(originalQuery);
   const query = normalizeSearchText(`${originalQuery} ${translatedQuery}`);
+  const isScissorsQuery = includesAny(original, ["scissors", "scissor", "ciseaux", "ciseau", "ciseaux a pansements", "ciseaux à pansements"]);
   const recalls: string[] = [];
   const add = (...terms: string[]) => {
     for (const term of terms) {
@@ -242,7 +244,10 @@ function supplementalRecallQueries(originalQuery: string, translatedQuery: strin
   if (includesAny(query, ["dummy", "dummies", "manikin", "manikins", "mannequin", "mannequins"])) {
     add("cpr manikin", "training manikin", "patient simulator", "rescue dummy", "manikin");
   }
-  if (includesAny(query, ["bandaid", "bandaids", "band aid", "band aids", "band-aid", "band-aids", "bandage", "bandages", "pansement", "pansements", "wound dressing", "wound dressings", "dressing", "dressings"])) {
+  if (isScissorsQuery) {
+    add("scissor", "medical scissors", "bandage scissor", "bandage shears");
+  }
+  if (!isScissorsQuery && includesAny(query, ["bandaid", "bandaids", "band aid", "band aids", "band-aid", "band-aids", "bandage", "bandages", "pansement", "pansements", "wound dressing", "wound dressings", "dressing", "dressings"])) {
     add("adhesive bandage", "bandage", "wound dressing", "gauze", "dressings");
   }
   if (includesAny(query, ["ceinture", "ceintures", "belt", "belts"])) {
@@ -250,6 +255,9 @@ function supplementalRecallQueries(originalQuery: string, translatedQuery: strin
   }
   if (includesAny(query, ["oxygen mask", "oxygen masks", "masque oxygene", "masque oxygène", "masque d oxygene", "masque d’oxygène", "masques oxygene", "masques oxygène"])) {
     add("oxygen mask", "oxygen masks", "non-rebreather mask", "high concentration oxygen mask");
+  }
+  if (includesAny(original, ["cpr mask", "cpr masks", "masque rcr", "masques rcr", "rcr mask", "rcr masks"])) {
+    add("cpr pocket mask", "pocket mask", "cpr mask", "cpr pocket ventilator", "face shield");
   }
   if (includesAny(query, ["patient monitor", "patient monitors", "patient monitoring", "vital signs monitor", "vital sign monitor", "vitals monitor", "moniteur patient", "moniteur de patient", "moniteur de signes vitaux"])) {
     add("patient monitor", "vital signs monitor", "bedside monitor", "multiparameter monitor", "edan im50", "edan im60");

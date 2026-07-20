@@ -631,6 +631,11 @@ const cprMaskTerms = [
 ];
 
 const cprMaskDemoteTerms = [
+  "smart bag",
+  "manual ventilation",
+  "bag valve",
+  "oxygen reservoir",
+  "oxygen tubing",
   "n95",
   "kn95",
   "respirator",
@@ -788,6 +793,9 @@ const dressingDemoteTerms = [
 ];
 
 const scissorsTerms = [
+  "bandage scissor",
+  "paramedic scissor",
+  "medical scissor",
   "scissors",
   "scissor",
   "medical scissors",
@@ -808,6 +816,12 @@ const scissorsDemoteTerms = [
   "adhesive bandage",
   "dressing",
   "dressings",
+  "elastic adhesive",
+  "athletic tape",
+  "tape",
+  "wrap",
+  "ob kit",
+  "kit",
   "gauze",
   "compress",
   "compresses",
@@ -1093,7 +1107,8 @@ export function applyIntentRanking(hits: any[] = [], originalQuery: string, sear
     const isCprMaskQuery = hasAny(originalNormalizedQuery, ["cpr mask", "cpr masks", "masque rcr", "masques rcr", "rcr mask", "rcr masks"]);
     if (isCprMaskQuery) {
       const nameLooksLikeCprMask = hasAny(nameText, cprMaskTerms);
-      if (nameLooksLikeCprMask) intentScore += 520;
+      if (hasAny(nameText, ["cpr pocket mask", "pocket mask", "cpr pocket ventilator", "pocket ventilator"])) intentScore += 860;
+      else if (nameLooksLikeCprMask) intentScore += 520;
       else intentScore -= 680;
       if (hasAny(nameText, cprMaskDemoteTerms)) intentScore -= 360;
     }

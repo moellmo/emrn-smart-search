@@ -163,6 +163,7 @@ function includesAny(text: string, terms: string[]) {
 function autocompleteRecallQueries(originalQuery: string, translatedQuery: string) {
   const original = normalizeSearchText(originalQuery);
   const query = normalizeSearchText(`${originalQuery} ${translatedQuery}`);
+  const isScissorsQuery = includesAny(original, ["scissors", "scissor", "ciseaux", "ciseau", "ciseaux a pansements", "ciseaux à pansements"]);
   const recalls: string[] = [];
   const add = (...terms: string[]) => {
     for (const term of terms) {
@@ -174,7 +175,10 @@ function autocompleteRecallQueries(originalQuery: string, translatedQuery: strin
   if (includesAny(query, ["glove", "gloves", "gant", "gants"])) {
     add("nitrile gloves", "exam gloves", "surgical gloves", "medical gloves", "glove");
   }
-  if (includesAny(query, ["bandaid", "bandaids", "band aid", "band aids", "band-aid", "band-aids", "bandage", "bandages", "pansement", "pansements", "wound dressing", "wound dressings", "dressing", "dressings"])) {
+  if (isScissorsQuery) {
+    add("scissor", "medical scissors", "bandage scissor", "bandage shears");
+  }
+  if (!isScissorsQuery && includesAny(query, ["bandaid", "bandaids", "band aid", "band aids", "band-aid", "band-aids", "bandage", "bandages", "pansement", "pansements", "wound dressing", "wound dressings", "dressing", "dressings"])) {
     add("adhesive bandage", "bandage", "wound dressing", "gauze", "dressings");
   }
   if (includesAny(query, ["scalpel", "scalpels", "knife", "knives"])) {
@@ -195,8 +199,8 @@ function autocompleteRecallQueries(originalQuery: string, translatedQuery: strin
   if (includesAny(query, ["qcpr", "q cpr", "little baby", "little family", "little junior", "little anne", "baby qcpr", "family qcpr", "junior qcpr"])) {
     add(originalQuery, "little baby qcpr", "little family qcpr", "little junior qcpr", "little anne qcpr", "qcpr manikin");
   }
-  if (includesAny(query, ["cpr mask", "cpr masks", "masque rcr", "masques rcr", "rcr mask", "rcr masks"])) {
-    add("cpr pocket mask", "pocket mask", "cpr mask", "face shield");
+  if (includesAny(original, ["cpr mask", "cpr masks", "masque rcr", "masques rcr", "rcr mask", "rcr masks"])) {
+    add("cpr pocket mask", "pocket mask", "cpr mask", "cpr pocket ventilator", "face shield");
   }
 
   return recalls.slice(0, original.split(" ").length > 2 ? 4 : 5);
