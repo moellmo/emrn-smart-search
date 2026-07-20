@@ -233,40 +233,48 @@ export default function SmartSearchAdminPage() {
 
   async function loadAnalytics() {
     setStatus("Loading analytics...");
-    const res = await fetch("/api/search-analytics", {
-      headers: {
-        "x-smartsearch-admin-password": password,
-      },
-    });
-    const data = await res.json();
-    if (!res.ok) {
-      setStatus(data.error || "Could not load analytics.");
-      return;
+    try {
+      const res = await fetch("/api/search-analytics", {
+        headers: {
+          "x-smartsearch-admin-password": password,
+        },
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setStatus(data.error || "Could not load analytics.");
+        return;
+      }
+      setAnalytics(data);
+      setStatus(`Analytics loaded: ${data.total || 0} stored event${Number(data.total || 0) === 1 ? "" : "s"}.`);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Could not load analytics.");
     }
-    setAnalytics(data);
-    setStatus(`Analytics loaded: ${data.total || 0} stored event${Number(data.total || 0) === 1 ? "" : "s"}.`);
   }
 
   async function sendAnalyticsTest() {
     setStatus("Sending analytics test event...");
-    const res = await fetch("/api/search-analytics", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        event: "admin_test",
-        query: "admin analytics test",
-        page_type: "smartsearch_admin",
-        url: window.location.href,
-      }),
-    });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      setStatus(data.error || "Could not save analytics test event.");
-      return;
+    try {
+      const res = await fetch("/api/search-analytics", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          event: "admin_test",
+          query: "admin analytics test",
+          page_type: "smartsearch_admin",
+          url: window.location.href,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setStatus(data.error || "Could not save analytics test event.");
+        return;
+      }
+      await loadAnalytics();
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Could not save analytics test event.");
     }
-    setStatus("Analytics test event saved. Click Analytics again to refresh the cards.");
   }
 
   function exportBulkRules() {

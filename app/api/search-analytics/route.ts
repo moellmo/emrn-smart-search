@@ -182,20 +182,46 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Invalid admin password." }, { status: 401, headers: corsHeaders });
   }
 
-  await ensureAnalyticsCollection();
+  try {
+    await ensureAnalyticsCollection();
+  } catch (error) {
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Could not prepare analytics storage." },
+      { status: 500, headers: corsHeaders }
+    );
+  }
 
-  const results: any = await typesenseAdmin.collections(COLLECTION_NAME).documents().search({
-    q: "*",
-    query_by: "query,event,sku,product_name",
-    sort_by: "created_at:desc",
-    per_page: 1000,
-  });
+  const pageSize = 250;
+  const pageCount = 4;
+  const rows: any[] = [];
+  let total = 0;
 
-  const rows = results.hits || [];
+  try {
+    for (let page = 1; page <= pageCount; page += 1) {
+      const results: any = await typesenseAdmin.collections(COLLECTION_NAME).documents().search({
+        q: "*",
+        query_by: "query,event,sku,product_name",
+        sort_by: "created_at:desc",
+        per_page: pageSize,
+        page,
+      });
+
+      total = Math.max(total, Number(results.found || 0));
+      rows.push(...(results.hits || []));
+      if ((results.hits || []).length < pageSize) break;
+    }
+  } catch (error) {
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Could not load analytics." },
+      { status: 500, headers: corsHeaders }
+    );
+  }
+
   const searchVolume = countQueriesForEvents(rows, ["search", "results_view"]);
   return NextResponse.json(
     {
-      total: results.found || rows.length,
+      total: total || rows.length,
+      loadedRows: rows.length,
       topQueries: searchVolume,
       searchVolume,
       topEvents: countBy(rows, "event"),
