@@ -40,6 +40,15 @@
     return "$" + n.toFixed(2);
   }
 
+  function priceHtml(product) {
+    const sale = Number(product.sale_price || 0);
+    const was = Number(product.retail_price || 0);
+    if (sale > 0 && was > sale) {
+      return `<span class="emrn-smart-sale-price">$${sale.toFixed(2)}</span><span class="emrn-smart-was-price">$${was.toFixed(2)}</span>`;
+    }
+    return money(product.price);
+  }
+
   function normalizePath(url) {
     try {
       const u = new URL(url, window.location.origin);
@@ -171,7 +180,7 @@
             ${product.sold_by ? `<span>${escapeHtml(product.sold_by)}</span>` : ""}
             ${product.sku ? `<span>SKU: ${escapeHtml(product.sku)}</span>` : ""}
           </div>
-          <div class="emrn-smart-price">${money(product.price)}</div>
+          <div class="emrn-smart-price">${priceHtml(product)}</div>
           <div class="emrn-smart-actions">
             <button class="emrn-smart-add-cart" type="button" data-product-id="${pid}" data-variant-id="${vid}">Add</button>
             <input class="emrn-smart-qty" type="number" min="1" value="1" inputmode="numeric">
@@ -476,7 +485,9 @@
       .emrn-smart-card-variant{font-size:12px;color:#c34d50;font-weight:800;min-height:24px;margin-top:7px}
       .emrn-smart-tags{display:flex;justify-content:center;flex-wrap:wrap;gap:5px;margin-top:8px}
       .emrn-smart-tags span{background:#f3f4f6;border-radius:999px;padding:4px 7px;font-size:10px;font-weight:800}
-      .emrn-smart-price{font-weight:800;font-size:16px;margin-top:8px}
+      .emrn-smart-price{font-weight:800;font-size:16px;margin-top:8px;display:flex;align-items:baseline;justify-content:center;gap:7px;flex-wrap:wrap}
+      .emrn-smart-sale-price{color:#1f8b4c;font-weight:900}
+      .emrn-smart-was-price{color:#8a8f9b;text-decoration:line-through;font-size:13px;font-weight:800}
       .emrn-smart-actions{margin-top:10px;display:flex;justify-content:center;gap:8px;align-items:center}
       .emrn-smart-add-cart{height:36px;border:0;border-radius:999px;background:#c34d50;color:#fff;font-weight:900;padding:0 15px;cursor:pointer}
       .emrn-smart-add-cart[disabled]{opacity:.6;cursor:wait}

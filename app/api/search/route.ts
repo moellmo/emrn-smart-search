@@ -38,9 +38,8 @@ function normalizeSort(sort: string | null) {
     case "price_desc":
       return "price:desc";
     case "name_asc":
-      return "name:asc";
     case "name_desc":
-      return "name:desc";
+      return "_text_match:desc,popularity_score:desc,product_id:desc";
     case "newest":
       return "product_id:desc";
     case "popularity":
@@ -243,6 +242,9 @@ function supplementalRecallQueries(originalQuery: string, translatedQuery: strin
   if (includesAny(query, ["dummy", "dummies", "manikin", "manikins", "mannequin", "mannequins"])) {
     add("cpr manikin", "training manikin", "patient simulator", "rescue dummy", "manikin");
   }
+  if (includesAny(query, ["bandaid", "bandaids", "band aid", "band aids", "band-aid", "band-aids", "bandage", "bandages", "pansement", "pansements", "wound dressing", "wound dressings", "dressing", "dressings"])) {
+    add("adhesive bandage", "bandage", "wound dressing", "gauze", "dressings");
+  }
   if (includesAny(query, ["ceinture", "ceintures", "belt", "belts"])) {
     add("gait belt", "transfer belt", "safety belt", "stretcher belt", "belt");
   }
@@ -343,6 +345,23 @@ function mergeFacetCounts(field: string, ...groups: any[]) {
       .slice(0, 1000),
     ...(stats ? { stats } : {}),
   };
+}
+
+function applyClientSort(hits: any[] = [], sort: string) {
+  if (sort !== "name_asc" && sort !== "name_desc") return hits;
+
+  const direction = sort === "name_desc" ? -1 : 1;
+  const displayName = (hit: any) =>
+    String(hit.document?.parent_name || hit.document?.name || hit.document?.sku || "").trim();
+
+  return [...hits].sort((a, b) => {
+    const nameCompare = displayName(a).localeCompare(displayName(b), undefined, {
+      numeric: true,
+      sensitivity: "base",
+    });
+    if (nameCompare) return nameCompare * direction;
+    return String(hitKey(a)).localeCompare(String(hitKey(b))) * direction;
+  });
 }
 
 function addMissingFacetBucket(result: any, field: string, label: string) {
@@ -565,7 +584,7 @@ export async function GET(req: NextRequest) {
       q,
       controls
     );
-    const filteredHits = prioritizePatientMonitorUnits(rankedHits, q, smartQuery.search_query);
+    const filteredHits = applyClientSort(prioritizePatientMonitorUnits(rankedHits, q, smartQuery.search_query), sort);
 
     if (fulfilledSupplementalResults.length) {
       const facetBase =

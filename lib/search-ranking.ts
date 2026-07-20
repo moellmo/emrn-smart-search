@@ -908,7 +908,7 @@ export function applyIntentRanking(hits: any[] = [], originalQuery: string, sear
       demoteStrong: bagDemoteTerms,
     },
     {
-      match: ["soin des plaies", "soins des plaies", "soins de plaies", "traitement des plaies", "wound care", "wound dressing", "wound dressings"],
+      match: ["soin des plaies", "soins des plaies", "soins de plaies", "traitement des plaies", "wound care", "wound dressing", "wound dressings", "bandaid", "bandaids", "band aid", "band aids", "band-aid", "band-aids", "bandage", "bandages"],
       prefer: ["wound care", "wound dressing", "wound dressings", "dressings", "gauze", "bandage", "bandages"],
       demote: ["manikin", "manikins", "training", "trainer", "simulator", "skin", "cpr", "torso"],
     },
@@ -974,7 +974,7 @@ export function applyIntentRanking(hits: any[] = [], originalQuery: string, sear
       demoteStrong: gloveDemoteTerms,
     },
     {
-      match: ["pansement", "pansements", "wound dressing", "wound dressings", "dressing", "dressings"],
+      match: ["bandaid", "bandaids", "band aid", "band aids", "band-aid", "band-aids", "bandage", "bandages", "pansement", "pansements", "wound dressing", "wound dressings", "dressing", "dressings"],
       prefer: dressingTerms,
       preferStrong: ["wound dressing", "wound dressings", "dressing", "dressings", "bandage", "bandages", "gauze"],
       demote: dressingDemoteTerms,
@@ -1098,11 +1098,13 @@ export function applyIntentRanking(hits: any[] = [], originalQuery: string, sear
       else intentScore -= 620;
       if (hasAny(nameText, gloveDemoteTerms)) intentScore -= 420;
     }
-    const isDressingQuery = hasAny(query, ["pansement", "pansements", "wound dressing", "wound dressings", "dressing", "dressings"]);
+    const isDressingQuery = hasAny(query, ["bandaid", "bandaids", "band aid", "band aids", "band-aid", "band-aids", "bandage", "bandages", "pansement", "pansements", "wound dressing", "wound dressings", "dressing", "dressings"]);
     if (isDressingQuery) {
       const nameLooksLikeDressing = hasAny(nameText, dressingTerms);
-      if (nameLooksLikeDressing) intentScore += 360;
-      else intentScore -= 560;
+      const categoryLooksLikeDressing = hasAny(categoryText, ["first aid", "wound care", "bandage", "bandages", "dressing", "dressings", "gauze"]);
+      if (nameLooksLikeDressing) intentScore += 520;
+      else if (categoryLooksLikeDressing) intentScore += 220;
+      else intentScore -= 760;
       if (hasAny(nameText, dressingDemoteTerms)) intentScore -= 380;
     }
     const isScalpelQuery = hasAny(query, ["scalpel", "scalpels", "knife", "knives"]);

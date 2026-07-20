@@ -63,6 +63,7 @@ function normalizeHit(doc: any) {
     sold_by: doc.sold_by || "",
     price: doc.price,
     sale_price: doc.sale_price,
+    retail_price: doc.retail_price,
     image: doc.image,
     url: absoluteStoreUrl(doc.url),
     option_text: doc.option_text || "",
@@ -173,8 +174,8 @@ function autocompleteRecallQueries(originalQuery: string, translatedQuery: strin
   if (includesAny(query, ["glove", "gloves", "gant", "gants"])) {
     add("nitrile gloves", "exam gloves", "surgical gloves", "medical gloves", "glove");
   }
-  if (includesAny(query, ["pansement", "pansements", "wound dressing", "wound dressings", "dressing", "dressings"])) {
-    add("wound dressing", "bandage", "gauze", "dressings");
+  if (includesAny(query, ["bandaid", "bandaids", "band aid", "band aids", "band-aid", "band-aids", "bandage", "bandages", "pansement", "pansements", "wound dressing", "wound dressings", "dressing", "dressings"])) {
+    add("adhesive bandage", "bandage", "wound dressing", "gauze", "dressings");
   }
   if (includesAny(query, ["scalpel", "scalpels", "knife", "knives"])) {
     add("scalpel", "scalpel blade", "surgical blade");

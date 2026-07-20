@@ -374,7 +374,8 @@ export async function getAllProductsForSearch() {
 
       const name = docName(product.name || "", label || optionText);
 
-      const price = Number(
+      const regularPrice = Number(variant?.price ?? product.price ?? 0);
+      const calculatedPrice = Number(
         variant?.calculated_price ??
           variant?.price ??
           product.calculated_price ??
@@ -383,7 +384,7 @@ export async function getAllProductsForSearch() {
       );
 
       const salePrice = Number(variant?.sale_price ?? product.sale_price ?? 0);
-      const retailPrice = Number(variant?.retail_price ?? product.retail_price ?? 0);
+      const retailPrice = Number(variant?.retail_price ?? product.retail_price ?? 0) || (salePrice > 0 && regularPrice > salePrice ? regularPrice : 0);
 
       const image = variant?.image_url || baseImage;
 
@@ -425,7 +426,7 @@ export async function getAllProductsForSearch() {
         variant_label: label,
         color: extractColorOption(optionText || label),
         search_text: searchText,
-        price,
+        price: calculatedPrice,
         sale_price: salePrice,
         retail_price: retailPrice,
         image,
