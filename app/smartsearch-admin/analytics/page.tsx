@@ -67,6 +67,7 @@ export default function SmartSearchAnalyticsPage() {
     (summary?.topEvents || []).forEach((item) => counts.set(item.value, item.count));
     return counts;
   }, [summary]);
+  const totalSearchEvents = (eventCounts.get("search") || 0) + (eventCounts.get("results_view") || 0) + (eventCounts.get("server_search") || 0);
 
   async function loadSummary() {
     setStatus("Loading analytics...");
@@ -168,7 +169,7 @@ export default function SmartSearchAnalyticsPage() {
             <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 14, marginBottom: 18 }}>
               <Stat label="Stored events" value={summary.total || 0} />
               <Stat label="Loaded rows" value={summary.loadedRows || 0} />
-              <Stat label="Searches" value={eventCounts.get("search") || 0} />
+              <Stat label="Searches" value={totalSearchEvents} />
               <Stat label="Product clicks" value={eventCounts.get("product_click") || 0} />
               <Stat label="Cart adds" value={eventCounts.get("add_to_cart") || 0} />
             </div>
