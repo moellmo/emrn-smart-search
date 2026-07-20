@@ -34,6 +34,8 @@ type PreviewProduct = {
   smart_reasons?: string[];
 };
 
+const PREVIEW_PAGE_SIZE = 48;
+
 const blankControls: SearchOverrides = {
   redirects: [],
   pinnedSkus: {},
@@ -109,6 +111,9 @@ export default function SmartSearchAdminPage() {
   const [previewProducts, setPreviewProducts] = useState<PreviewProduct[]>([]);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewStatus, setPreviewStatus] = useState("");
+  const [previewPage, setPreviewPage] = useState(0);
+  const [previewFound, setPreviewFound] = useState(0);
+  const [previewHasMore, setPreviewHasMore] = useState(false);
 
   const runtime = useMemo<SearchOverrides>(
     () => ({
@@ -402,6 +407,14 @@ export default function SmartSearchAdminPage() {
   }
 
   async function loadLiveResults() {
+    await loadPreviewPage(1, false);
+  }
+
+  async function loadMoreLiveResults() {
+    await loadPreviewPage(previewPage + 1, true);
+  }
+
+  async function loadPreviewPage(pageToLoad: number, append: boolean) {
     const cleanTerm = controlTerm.trim();
     if (!cleanTerm) {
       setPreviewStatus("Enter a search term first.");
@@ -409,18 +422,31 @@ export default function SmartSearchAdminPage() {
     }
 
     setPreviewLoading(true);
-    setPreviewStatus("Loading live results...");
+    setPreviewStatus(append ? "Loading more live results..." : "Loading live results...");
     try {
-      const res = await fetch(`/api/search?q=${encodeURIComponent(cleanTerm)}&per_page=16`, {
+      const res = await fetch(`/api/search?q=${encodeURIComponent(cleanTerm)}&per_page=${PREVIEW_PAGE_SIZE}&page=${pageToLoad}`, {
         headers: password ? { "x-smartsearch-admin-password": password } : {},
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Could not load live results.");
       const products = (data.hits || []).map((hit: { document?: PreviewProduct }) => hit.document || {});
-      setPreviewProducts(products);
-      setPreviewStatus(`${products.length} live result${products.length === 1 ? "" : "s"} loaded.`);
+      const found = Number(data.found || products.length || 0);
+      const nextProducts = append ? [...previewProducts] : [];
+      const seen = new Set(nextProducts.map((product) => `${product.sku || ""}:${product.name || ""}`));
+      for (const product of products) {
+        const key = `${product.sku || ""}:${product.name || ""}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        nextProducts.push(product);
+      }
+
+      setPreviewFound(found);
+      setPreviewPage(pageToLoad);
+      setPreviewProducts(nextProducts);
+      setPreviewHasMore(nextProducts.length < found && products.length > 0);
+      setPreviewStatus(`Showing ${nextProducts.length} of ${found || nextProducts.length} live result${(found || nextProducts.length) === 1 ? "" : "s"}.`);
     } catch (error) {
-      setPreviewProducts([]);
+      if (!append) setPreviewProducts([]);
       setPreviewStatus(error instanceof Error ? error.message : "Could not load live results.");
     } finally {
       setPreviewLoading(false);
@@ -492,7 +518,14 @@ export default function SmartSearchAdminPage() {
                 Search term
                 <input
                   value={controlTerm}
-                  onChange={(event) => setControlTerm(event.target.value)}
+                  onChange={(event) => {
+                    setControlTerm(event.target.value);
+                    setPreviewProducts([]);
+                    setPreviewStatus("");
+                    setPreviewPage(0);
+                    setPreviewFound(0);
+                    setPreviewHasMore(false);
+                  }}
                   placeholder="fournitures pour perfusion intraveineuse"
                   style={inputStyle}
                 />
@@ -529,7 +562,7 @@ export default function SmartSearchAdminPage() {
               <button onClick={addPinnedFromBuilder} style={buttonStyle("#c34d50")}>Add / update pins</button>
               <button onClick={addSynonymsFromBuilder} style={buttonStyle("#14365d")}>Add / update synonyms</button>
               <button onClick={addSuggestionsFromBuilder} style={buttonStyle("#334155")}>Add suggestions</button>
-              <button onClick={loadLiveResults} style={buttonStyle("#166534")}>{previewLoading ? "Loading..." : "Load live results"}</button>
+              <button onClick={() => void loadLiveResults()} style={buttonStyle("#166534")}>{previewLoading ? "Loading..." : `Load first ${PREVIEW_PAGE_SIZE}`}</button>
               <button onClick={openAutocompleteTest} style={outlineButtonStyle}>Test autocomplete</button>
               <button onClick={openSearchTest} style={outlineButtonStyle}>Test full search</button>
             </div>
@@ -558,6 +591,11 @@ export default function SmartSearchAdminPage() {
                     </button>
                   </div>
                 ))}
+                {previewHasMore ? (
+                  <button onClick={() => void loadMoreLiveResults()} disabled={previewLoading} style={{ ...outlineButtonStyle, justifySelf: "center", marginTop: 4 }}>
+                    {previewLoading ? "Loading..." : `Load more results (${previewProducts.length}/${previewFound})`}
+                  </button>
+                ) : null}
               </div>
             ) : null}
             {Object.keys(savedRuntime.pinnedSkus || {}).length ? (
