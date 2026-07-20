@@ -244,7 +244,29 @@ export default function SmartSearchAdminPage() {
       return;
     }
     setAnalytics(data);
-    setStatus("Analytics loaded.");
+    setStatus(`Analytics loaded: ${data.total || 0} stored event${Number(data.total || 0) === 1 ? "" : "s"}.`);
+  }
+
+  async function sendAnalyticsTest() {
+    setStatus("Sending analytics test event...");
+    const res = await fetch("/api/search-analytics", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        event: "admin_test",
+        query: "admin analytics test",
+        page_type: "smartsearch_admin",
+        url: window.location.href,
+      }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      setStatus(data.error || "Could not save analytics test event.");
+      return;
+    }
+    setStatus("Analytics test event saved. Click Analytics again to refresh the cards.");
   }
 
   function exportBulkRules() {
@@ -510,18 +532,45 @@ export default function SmartSearchAdminPage() {
             <button onClick={saveControls} disabled={!loaded} style={buttonStyle("#c34d50")}>Save</button>
             <button onClick={reindexNow} style={buttonStyle("#166534")}>Reindex</button>
             <button onClick={loadAnalytics} style={buttonStyle("#334155")}>Analytics</button>
+            <button onClick={sendAnalyticsTest} style={outlineButtonStyle}>Test analytics</button>
           </div>
 
-          {status && <p style={{ margin: "12px 0 0", color: status.includes("Saved") || status.includes("Loaded") ? "#166534" : "#b91c1c", fontWeight: 800 }}>{status}</p>}
+          {status && (
+            <p
+              style={{
+                margin: "12px 0 0",
+                color: /saved|loaded|complete|test event saved|cleared|added|exported|applied/i.test(status) ? "#166534" : "#b91c1c",
+                fontWeight: 800,
+              }}
+            >
+              {status}
+            </p>
+          )}
         </div>
 
         {analytics && (
-          <Panel title="Analytics" help="Recent SmartSearch activity. Tracks searches, product clicks, add to cart, and add to quote from the custom search UI.">
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 14 }}>
-              <MetricList title="Top search terms" items={analytics.topQueries} />
-              <MetricList title="Added to cart" items={analytics.topCartProducts} />
-              <MetricList title="Added to quote" items={analytics.topQuoteProducts} />
+          <Panel title="Analytics" help="Recent SmartSearch activity. Search, click, cart, quote, and no-result logging runs in the background so it does not slow customer searches. Completed purchases need a separate checkout/order-confirmation hook before they can show here.">
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 14, marginBottom: 14 }}>
+              <AnalyticsStat label="Events stored" value={analytics.total || 0} />
+              <AnalyticsStat label="Search terms" value={(analytics.searchVolume || []).length} />
+              <AnalyticsStat label="No-result terms" value={(analytics.topNoResultQueries || []).length} />
+              <AnalyticsStat label="Cart adds" value={(analytics.topEvents || []).find((item: { value: string; count: number }) => item.value === "add_to_cart")?.count || 0} />
             </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 14 }}>
+              <MetricList title="Search term volume" items={analytics.searchVolume || analytics.topQueries} />
+              <MetricList title="No-result searches" items={analytics.topNoResultQueries} />
+              <MetricList title="Event types" items={analytics.topEvents} />
+              <MetricList title="Products clicked" items={analytics.topClickedProducts} />
+              <MetricList title="Products added to cart" items={analytics.topCartProducts} />
+              <MetricList title="Products added to quote" items={analytics.topQuoteProducts} />
+              <MetricList title="Cart adds by search" items={analytics.topCartQueries} />
+              <MetricList title="Quote adds by search" items={analytics.topQuoteQueries} />
+              <MetricList title="Purchases by search" items={analytics.topPurchaseQueries} />
+              <MetricList title="Search -> cart product" items={analytics.topCartSearchProducts} />
+              <MetricList title="Search -> quote product" items={analytics.topQuoteSearchProducts} />
+              <MetricList title="Purchased products" items={analytics.topPurchasedProducts} />
+            </div>
+            <QueryFunnelList items={analytics.queryFunnel} />
           </Panel>
         )}
 
@@ -905,6 +954,15 @@ function PrivateCategoryRows({
   );
 }
 
+function AnalyticsStat({ label, value }: { label: string; value: number | string }) {
+  return (
+    <div style={{ border: "1px solid #e2e8f0", borderRadius: 14, padding: 14, background: "#f8fafc" }}>
+      <div style={{ color: "#64748b", fontSize: 12, fontWeight: 900, textTransform: "uppercase", letterSpacing: ".04em" }}>{label}</div>
+      <strong style={{ display: "block", marginTop: 6, color: "#14365d", fontSize: 26 }}>{value}</strong>
+    </div>
+  );
+}
+
 function MetricList({ title, items = [] }: { title: string; items?: Array<{ value: string; sku?: string; count: number }> }) {
   return (
     <div style={{ border: "1px solid #e2e8f0", borderRadius: 14, padding: 14, background: "#f8fafc" }}>
@@ -916,6 +974,50 @@ function MetricList({ title, items = [] }: { title: string; items?: Array<{ valu
             <strong style={{ color: "#c34d50" }}>{item.count}</strong>
           </div>
         ))
+      ) : (
+        <p style={{ color: "#64748b", margin: 0 }}>No data yet.</p>
+      )}
+    </div>
+  );
+}
+
+function QueryFunnelList({
+  items = [],
+}: {
+  items?: Array<{ value: string; count: number; searches: number; noResults: number; clicks: number; carts: number; quotes: number; purchases: number }>;
+}) {
+  return (
+    <div style={{ border: "1px solid #e2e8f0", borderRadius: 14, padding: 14, background: "#f8fafc", marginTop: 14 }}>
+      <h3 style={{ margin: "0 0 10px", fontSize: 16, color: "#111827" }}>Search term funnel</h3>
+      {items.length ? (
+        <div style={{ overflowX: "auto" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 760 }}>
+            <thead>
+              <tr style={{ color: "#64748b", fontSize: 12, textAlign: "left" }}>
+                <th style={tableHeaderStyle}>Search term</th>
+                <th style={tableHeaderStyle}>Searches</th>
+                <th style={tableHeaderStyle}>No results</th>
+                <th style={tableHeaderStyle}>Clicks</th>
+                <th style={tableHeaderStyle}>Carts</th>
+                <th style={tableHeaderStyle}>Quotes</th>
+                <th style={tableHeaderStyle}>Purchases</th>
+              </tr>
+            </thead>
+            <tbody>
+              {items.slice(0, 20).map((item) => (
+                <tr key={item.value}>
+                  <td style={{ ...tableCellStyle, fontWeight: 900, color: "#14365d", maxWidth: 280, overflowWrap: "anywhere" }}>{item.value}</td>
+                  <td style={tableCellStyle}>{item.searches || 0}</td>
+                  <td style={{ ...tableCellStyle, color: item.noResults ? "#b91c1c" : "#334155", fontWeight: item.noResults ? 900 : 700 }}>{item.noResults || 0}</td>
+                  <td style={tableCellStyle}>{item.clicks || 0}</td>
+                  <td style={tableCellStyle}>{item.carts || 0}</td>
+                  <td style={tableCellStyle}>{item.quotes || 0}</td>
+                  <td style={tableCellStyle}>{item.purchases || 0}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       ) : (
         <p style={{ color: "#64748b", margin: 0 }}>No data yet.</p>
       )}
@@ -1083,6 +1185,19 @@ const textareaStyle = {
   resize: "vertical" as const,
   color: "#111827",
   background: "#fff",
+};
+
+const tableHeaderStyle = {
+  borderBottom: "1px solid #e2e8f0",
+  padding: "9px 8px",
+  fontWeight: 900,
+};
+
+const tableCellStyle = {
+  borderBottom: "1px solid #e2e8f0",
+  padding: "9px 8px",
+  color: "#334155",
+  fontWeight: 700,
 };
 
 const smallButtonStyle = {

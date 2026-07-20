@@ -81,6 +81,47 @@ function countBy(rows: any[], key: string) {
     .slice(0, 25);
 }
 
+function eventMatches(row: any, events: string[]) {
+  return events.includes(String(row.document?.event || ""));
+}
+
+function cleanQuery(row: any) {
+  return String(row.document?.query || "").trim();
+}
+
+function countQueriesForEvents(rows: any[], events: string[]) {
+  const map = new Map<string, number>();
+  rows.filter((row) => eventMatches(row, events)).forEach((row) => {
+    const query = cleanQuery(row);
+    if (!query) return;
+    map.set(query, (map.get(query) || 0) + 1);
+  });
+
+  return Array.from(map.entries())
+    .map(([value, count]) => ({ value, count }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 25);
+}
+
+function countQueryProductEvents(rows: any[], event: string) {
+  const map = new Map<string, { value: string; sku: string; count: number }>();
+  rows
+    .filter((row) => row.document?.event === event)
+    .forEach((row) => {
+      const query = cleanQuery(row);
+      const sku = String(row.document?.sku || "").trim();
+      const name = String(row.document?.product_name || sku || "Unknown").trim();
+      if (!query && !name && !sku) return;
+      const value = `${query || "No query"} -> ${name || sku}`;
+      const key = `${query}|${sku || name}`;
+      const current = map.get(key) || { value, sku, count: 0 };
+      current.count += 1;
+      map.set(key, current);
+    });
+
+  return Array.from(map.values()).sort((a, b) => b.count - a.count).slice(0, 25);
+}
+
 function countEventProducts(rows: any[], event: string) {
   const map = new Map<string, { value: string; sku: string; count: number }>();
   rows
@@ -97,6 +138,45 @@ function countEventProducts(rows: any[], event: string) {
   return Array.from(map.values()).sort((a, b) => b.count - a.count).slice(0, 25);
 }
 
+function funnelByQuery(rows: any[]) {
+  const map = new Map<
+    string,
+    { value: string; count: number; searches: number; noResults: number; clicks: number; carts: number; quotes: number; purchases: number }
+  >();
+
+  rows.forEach((row) => {
+    const query = cleanQuery(row);
+    if (!query) return;
+    const event = String(row.document?.event || "");
+    const current =
+      map.get(query) ||
+      {
+        value: query,
+        count: 0,
+        searches: 0,
+        noResults: 0,
+        clicks: 0,
+        carts: 0,
+        quotes: 0,
+        purchases: 0,
+      };
+
+    if (event === "search" || event === "results_view") current.searches += 1;
+    if (event === "no_results") current.noResults += 1;
+    if (event === "product_click") current.clicks += 1;
+    if (event === "add_to_cart") current.carts += 1;
+    if (event === "add_to_quote") current.quotes += 1;
+    if (event === "purchase") current.purchases += 1;
+    current.count = current.searches + current.noResults + current.clicks + current.carts + current.quotes + current.purchases;
+    map.set(query, current);
+  });
+
+  return Array.from(map.values())
+    .filter((item) => item.count > 0)
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 40);
+}
+
 export async function GET(req: NextRequest) {
   if (!isAuthorized(req)) {
     return NextResponse.json({ error: "Invalid admin password." }, { status: 401, headers: corsHeaders });
@@ -108,18 +188,28 @@ export async function GET(req: NextRequest) {
     q: "*",
     query_by: "query,event,sku,product_name",
     sort_by: "created_at:desc",
-    per_page: 250,
+    per_page: 1000,
   });
 
   const rows = results.hits || [];
+  const searchVolume = countQueriesForEvents(rows, ["search", "results_view"]);
   return NextResponse.json(
     {
       total: results.found || rows.length,
-      topQueries: countBy(rows, "query"),
+      topQueries: searchVolume,
+      searchVolume,
       topEvents: countBy(rows, "event"),
+      topNoResultQueries: countQueriesForEvents(rows, ["no_results"]),
       topClickedProducts: countEventProducts(rows, "product_click"),
       topCartProducts: countEventProducts(rows, "add_to_cart"),
       topQuoteProducts: countEventProducts(rows, "add_to_quote"),
+      topPurchasedProducts: countEventProducts(rows, "purchase"),
+      topCartQueries: countQueriesForEvents(rows, ["add_to_cart"]),
+      topQuoteQueries: countQueriesForEvents(rows, ["add_to_quote"]),
+      topPurchaseQueries: countQueriesForEvents(rows, ["purchase"]),
+      topCartSearchProducts: countQueryProductEvents(rows, "add_to_cart"),
+      topQuoteSearchProducts: countQueryProductEvents(rows, "add_to_quote"),
+      queryFunnel: funnelByQuery(rows),
       recent: rows.slice(0, 50).map((row: any) => row.document),
     },
     { headers: corsHeaders }
