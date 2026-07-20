@@ -114,6 +114,7 @@ export default function SmartSearchAdminPage() {
   const [previewPage, setPreviewPage] = useState(0);
   const [previewFound, setPreviewFound] = useState(0);
   const [previewHasMore, setPreviewHasMore] = useState(false);
+  const [showAllSavedPinShortcuts, setShowAllSavedPinShortcuts] = useState(false);
 
   const runtime = useMemo<SearchOverrides>(
     () => ({
@@ -602,10 +603,15 @@ export default function SmartSearchAdminPage() {
               <div style={{ marginTop: 12 }}>
                 <div style={{ color: "#64748b", fontWeight: 900, fontSize: 12, marginBottom: 6 }}>Load saved pinned rule</div>
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                  {Object.entries(savedRuntime.pinnedSkus).slice(0, 8).map(([term, skus]) => (
+                  {(showAllSavedPinShortcuts ? Object.entries(savedRuntime.pinnedSkus) : Object.entries(savedRuntime.pinnedSkus).slice(0, 8)).map(([term, skus]) => (
                     <button key={term} onClick={() => loadSavedPinnedRule(term, skus)} style={outlineButtonStyle}>{term}</button>
                   ))}
                 </div>
+                {Object.keys(savedRuntime.pinnedSkus).length > 8 ? (
+                  <button onClick={() => setShowAllSavedPinShortcuts(!showAllSavedPinShortcuts)} style={{ ...outlineButtonStyle, marginTop: 8 }}>
+                    {showAllSavedPinShortcuts ? "Show fewer saved pins" : `View all ${Object.keys(savedRuntime.pinnedSkus).length} saved pins`}
+                  </button>
+                ) : null}
               </div>
             ) : null}
           </Panel>
