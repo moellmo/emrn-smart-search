@@ -1,5 +1,5 @@
-import { NextRequest, NextResponse } from "next/server";
-import { typesenseSearch } from "../../../lib/typesense";
+import { after, NextRequest, NextResponse } from "next/server";
+import { typesenseAdmin, typesenseSearch } from "../../../lib/typesense";
 import { buildSmartSearchQuery } from "../../../lib/smart-search-translator";
 import { normalizeSearchText } from "../../../lib/search-language";
 import { applyBrandQueryRanking, applyHiddenSkuFilter, applyIntentRanking, applyPinnedSkuRanking, applyPrivateCategoryFilter, explainResult } from "../../../lib/search-ranking";
@@ -7,6 +7,7 @@ import { getEffectiveSearchOverrides, getPinnedSkusForQuery } from "../../../lib
 import { STORE_URL, absoluteStoreUrl } from "../../../lib/store-url";
 
 const COLLECTION_NAME = "emrn_products";
+const ANALYTICS_COLLECTION_NAME = "emrn_search_analytics";
 const STORE_HASH = process.env.BIGCOMMERCE_STORE_HASH!;
 const ACCESS_TOKEN = process.env.BIGCOMMERCE_ACCESS_TOKEN!;
 const BIGCOMMERCE_API_BASE = `https://api.bigcommerce.com/stores/${STORE_HASH}/v3`;
@@ -389,6 +390,64 @@ function addMissingSingleValueFacetBuckets(result: any) {
   addMissingFacetBucket(result, "sold_by", MISSING_SOLD_BY_LABEL);
 }
 
+async function ensureSearchAnalyticsCollection() {
+  try {
+    await typesenseAdmin.collections(ANALYTICS_COLLECTION_NAME).retrieve();
+  } catch {
+    await typesenseAdmin.collections().create({
+      name: ANALYTICS_COLLECTION_NAME,
+      fields: [
+        { name: "id", type: "string" },
+        { name: "event", type: "string", facet: true },
+        { name: "query", type: "string", facet: true, optional: true },
+        { name: "sku", type: "string", facet: true, optional: true },
+        { name: "product_name", type: "string", optional: true },
+        { name: "product_id", type: "int64", optional: true },
+        { name: "customer_id", type: "string", facet: true, optional: true },
+        { name: "page_type", type: "string", facet: true, optional: true },
+        { name: "url", type: "string", optional: true },
+        { name: "created_at", type: "int64", facet: true },
+      ],
+      default_sorting_field: "created_at",
+    });
+  }
+}
+
+function scheduleSearchAnalytics({
+  query,
+  page,
+  hitCount,
+  customerId,
+  referer,
+}: {
+  query: string;
+  page: number;
+  hitCount: number;
+  customerId: string;
+  referer: string;
+}) {
+  const cleanQuery = String(query || "").trim();
+  if (!cleanQuery || cleanQuery === "*" || page !== 1) return;
+
+  after(async () => {
+    try {
+      const now = Date.now();
+      await ensureSearchAnalyticsCollection();
+      await typesenseAdmin.collections(ANALYTICS_COLLECTION_NAME).documents().create({
+        id: `${now}-${Math.random().toString(36).slice(2)}`,
+        event: hitCount > 0 ? "server_search" : "server_no_results",
+        query: cleanQuery.slice(0, 180),
+        customer_id: String(customerId || "").trim().slice(0, 80),
+        page_type: "smartsearch_api",
+        url: String(referer || "").trim().slice(0, 500),
+        created_at: now,
+      });
+    } catch (error) {
+      console.warn("[SmartSearch analytics] could not record server search", error);
+    }
+  });
+}
+
 export async function OPTIONS() {
   return new NextResponse(null, { status: 204, headers: corsHeaders });
 }
@@ -649,24 +708,31 @@ export async function GET(req: NextRequest) {
     }));
   }
 
-  return NextResponse.json(
-    {
-      ...results,
-      ...smartQuery,
-      fallback_terms: results.hits?.length ? [] : smartQuery.fallback_terms,
-      pinned_skus: getPinnedSkusForQuery(q, controls),
-      active_filters: {
-        brand,
-        category,
-        category_id: categoryId,
-        availability,
-        sold_by: soldBy,
-        color,
-        price_min: priceMin,
-        price_max: priceMax,
-        sort,
-      },
+  const responseBody = {
+    ...results,
+    ...smartQuery,
+    fallback_terms: results.hits?.length ? [] : smartQuery.fallback_terms,
+    pinned_skus: getPinnedSkusForQuery(q, controls),
+    active_filters: {
+      brand,
+      category,
+      category_id: categoryId,
+      availability,
+      sold_by: soldBy,
+      color,
+      price_min: priceMin,
+      price_max: priceMax,
+      sort,
     },
-    { headers: corsHeaders }
-  );
+  };
+
+  scheduleSearchAnalytics({
+    query: q,
+    page,
+    hitCount: Array.isArray(results.hits) ? results.hits.length : Number(results.found || 0),
+    customerId,
+    referer: req.headers.get("referer") || "",
+  });
+
+  return NextResponse.json(responseBody, { headers: corsHeaders });
 }

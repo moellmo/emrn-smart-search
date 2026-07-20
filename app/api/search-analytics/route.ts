@@ -187,8 +187,8 @@ function funnelByQuery(rows: AnalyticsHit[]) {
         purchases: 0,
       };
 
-    if (event === "search" || event === "results_view") current.searches += 1;
-    if (event === "no_results") current.noResults += 1;
+    if (event === "search" || event === "results_view" || event === "server_search") current.searches += 1;
+    if (event === "no_results" || event === "server_no_results") current.noResults += 1;
     if (event === "product_click") current.clicks += 1;
     if (event === "add_to_cart") current.carts += 1;
     if (event === "add_to_quote") current.quotes += 1;
@@ -286,7 +286,7 @@ export async function GET(req: NextRequest) {
     );
   }
 
-  const searchVolume = countQueriesForEvents(rows, ["search", "results_view"]);
+  const searchVolume = countQueriesForEvents(rows, ["search", "results_view", "server_search"]);
   return NextResponse.json(
     {
       total: total || rows.length,
@@ -294,7 +294,7 @@ export async function GET(req: NextRequest) {
       topQueries: searchVolume,
       searchVolume,
       topEvents: countBy(rows, "event"),
-      topNoResultQueries: countQueriesForEvents(rows, ["no_results"]),
+      topNoResultQueries: countQueriesForEvents(rows, ["no_results", "server_no_results"]),
       topClickedProducts: countEventProducts(rows, "product_click"),
       topCartProducts: countEventProducts(rows, "add_to_cart"),
       topQuoteProducts: countEventProducts(rows, "add_to_quote"),
