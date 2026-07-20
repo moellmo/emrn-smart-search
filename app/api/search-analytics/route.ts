@@ -9,6 +9,28 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "Content-Type, x-smartsearch-admin-password",
 };
 
+type AnalyticsDocument = {
+  id?: string;
+  event?: string;
+  query?: string;
+  sku?: string;
+  product_name?: string;
+  product_id?: number;
+  customer_id?: string;
+  page_type?: string;
+  url?: string;
+  created_at?: number;
+};
+
+type AnalyticsHit = {
+  document?: AnalyticsDocument;
+};
+
+type AnalyticsSearchResult = {
+  hits?: AnalyticsHit[];
+  found?: number;
+};
+
 function isAuthorized(req: NextRequest) {
   const configuredPassword = process.env.SMARTSEARCH_ADMIN_PASSWORD;
   const suppliedPassword = req.headers.get("x-smartsearch-admin-password") || "";
@@ -68,10 +90,14 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({ ok: true }, { headers: corsHeaders });
 }
 
-function countBy(rows: any[], key: string) {
+function documentValue(document: AnalyticsDocument | undefined, key: keyof AnalyticsDocument) {
+  return String(document?.[key] || "").trim();
+}
+
+function countBy(rows: AnalyticsHit[], key: keyof AnalyticsDocument) {
   const map = new Map<string, number>();
   rows.forEach((row) => {
-    const value = String(row.document?.[key] || "").trim();
+    const value = documentValue(row.document, key);
     if (!value) return;
     map.set(value, (map.get(value) || 0) + 1);
   });
@@ -81,15 +107,15 @@ function countBy(rows: any[], key: string) {
     .slice(0, 25);
 }
 
-function eventMatches(row: any, events: string[]) {
+function eventMatches(row: AnalyticsHit, events: string[]) {
   return events.includes(String(row.document?.event || ""));
 }
 
-function cleanQuery(row: any) {
+function cleanQuery(row: AnalyticsHit) {
   return String(row.document?.query || "").trim();
 }
 
-function countQueriesForEvents(rows: any[], events: string[]) {
+function countQueriesForEvents(rows: AnalyticsHit[], events: string[]) {
   const map = new Map<string, number>();
   rows.filter((row) => eventMatches(row, events)).forEach((row) => {
     const query = cleanQuery(row);
@@ -103,7 +129,7 @@ function countQueriesForEvents(rows: any[], events: string[]) {
     .slice(0, 25);
 }
 
-function countQueryProductEvents(rows: any[], event: string) {
+function countQueryProductEvents(rows: AnalyticsHit[], event: string) {
   const map = new Map<string, { value: string; sku: string; count: number }>();
   rows
     .filter((row) => row.document?.event === event)
@@ -122,7 +148,7 @@ function countQueryProductEvents(rows: any[], event: string) {
   return Array.from(map.values()).sort((a, b) => b.count - a.count).slice(0, 25);
 }
 
-function countEventProducts(rows: any[], event: string) {
+function countEventProducts(rows: AnalyticsHit[], event: string) {
   const map = new Map<string, { value: string; sku: string; count: number }>();
   rows
     .filter((row) => row.document?.event === event)
@@ -138,7 +164,7 @@ function countEventProducts(rows: any[], event: string) {
   return Array.from(map.values()).sort((a, b) => b.count - a.count).slice(0, 25);
 }
 
-function funnelByQuery(rows: any[]) {
+function funnelByQuery(rows: AnalyticsHit[]) {
   const map = new Map<
     string,
     { value: string; count: number; searches: number; noResults: number; clicks: number; carts: number; quotes: number; purchases: number }
@@ -177,6 +203,10 @@ function funnelByQuery(rows: any[]) {
     .slice(0, 40);
 }
 
+function analyticsDocument(row: AnalyticsHit) {
+  return row.document || {};
+}
+
 export async function GET(req: NextRequest) {
   if (!isAuthorized(req)) {
     return NextResponse.json({ error: "Invalid admin password." }, { status: 401, headers: corsHeaders });
@@ -191,20 +221,59 @@ export async function GET(req: NextRequest) {
     );
   }
 
+  const mode = req.nextUrl.searchParams.get("mode") || "summary";
+  if (mode === "events") {
+    const page = Math.max(1, Number(req.nextUrl.searchParams.get("page") || 1) || 1);
+    const perPage = Math.min(250, Math.max(25, Number(req.nextUrl.searchParams.get("per_page") || 100) || 100));
+    const event = String(req.nextUrl.searchParams.get("event") || "").trim();
+    const query = String(req.nextUrl.searchParams.get("query") || "").trim();
+    const filterParts = [];
+    if (event) filterParts.push(`event:=${JSON.stringify(event)}`);
+    if (query) filterParts.push(`query:=${JSON.stringify(query)}`);
+
+    try {
+      const results = (await typesenseAdmin.collections(COLLECTION_NAME).documents().search({
+        q: "*",
+        query_by: "query,event,sku,product_name",
+        sort_by: "created_at:desc",
+        per_page: perPage,
+        page,
+        ...(filterParts.length ? { filter_by: filterParts.join(" && ") } : {}),
+      })) as AnalyticsSearchResult;
+
+      const rows = (results.hits || []).map(analyticsDocument);
+      return NextResponse.json(
+        {
+          total: Number(results.found || rows.length || 0),
+          page,
+          perPage,
+          hasMore: page * perPage < Number(results.found || 0),
+          rows,
+        },
+        { headers: corsHeaders }
+      );
+    } catch (error) {
+      return NextResponse.json(
+        { error: error instanceof Error ? error.message : "Could not load analytics events." },
+        { status: 500, headers: corsHeaders }
+      );
+    }
+  }
+
   const pageSize = 250;
   const pageCount = 4;
-  const rows: any[] = [];
+  const rows: AnalyticsHit[] = [];
   let total = 0;
 
   try {
     for (let page = 1; page <= pageCount; page += 1) {
-      const results: any = await typesenseAdmin.collections(COLLECTION_NAME).documents().search({
+      const results = (await typesenseAdmin.collections(COLLECTION_NAME).documents().search({
         q: "*",
         query_by: "query,event,sku,product_name",
         sort_by: "created_at:desc",
         per_page: pageSize,
         page,
-      });
+      })) as AnalyticsSearchResult;
 
       total = Math.max(total, Number(results.found || 0));
       rows.push(...(results.hits || []));
@@ -236,7 +305,7 @@ export async function GET(req: NextRequest) {
       topCartSearchProducts: countQueryProductEvents(rows, "add_to_cart"),
       topQuoteSearchProducts: countQueryProductEvents(rows, "add_to_quote"),
       queryFunnel: funnelByQuery(rows),
-      recent: rows.slice(0, 50).map((row: any) => row.document),
+      recent: rows.slice(0, 50).map((row) => row.document),
     },
     { headers: corsHeaders }
   );

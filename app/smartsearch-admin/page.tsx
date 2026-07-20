@@ -34,6 +34,41 @@ type PreviewProduct = {
   smart_reasons?: string[];
 };
 
+type AnalyticsMetric = {
+  value: string;
+  sku?: string;
+  count: number;
+};
+
+type AnalyticsFunnelRow = {
+  value: string;
+  count: number;
+  searches: number;
+  noResults: number;
+  clicks: number;
+  carts: number;
+  quotes: number;
+  purchases: number;
+};
+
+type AnalyticsSummary = {
+  total?: number;
+  searchVolume?: AnalyticsMetric[];
+  topQueries?: AnalyticsMetric[];
+  topEvents?: AnalyticsMetric[];
+  topNoResultQueries?: AnalyticsMetric[];
+  topClickedProducts?: AnalyticsMetric[];
+  topCartProducts?: AnalyticsMetric[];
+  topQuoteProducts?: AnalyticsMetric[];
+  topPurchasedProducts?: AnalyticsMetric[];
+  topCartQueries?: AnalyticsMetric[];
+  topQuoteQueries?: AnalyticsMetric[];
+  topPurchaseQueries?: AnalyticsMetric[];
+  topCartSearchProducts?: AnalyticsMetric[];
+  topQuoteSearchProducts?: AnalyticsMetric[];
+  queryFunnel?: AnalyticsFunnelRow[];
+};
+
 const PREVIEW_PAGE_SIZE = 48;
 
 const blankControls: SearchOverrides = {
@@ -100,7 +135,7 @@ export default function SmartSearchAdminPage() {
   const [noResultsRows, setNoResultsRows] = useState<Array<{ term: string; values: string }>>([]);
   const [bulkRules, setBulkRules] = useState("");
   const [twoWaySynonyms, setTwoWaySynonyms] = useState(true);
-  const [analytics, setAnalytics] = useState<any>(null);
+  const [analytics, setAnalytics] = useState<AnalyticsSummary | null>(null);
   const [savedRuntime, setSavedRuntime] = useState<SearchOverrides>(blankControls);
   const [effectiveControls, setEffectiveControls] = useState<SearchOverrides>(blankControls);
   const [defaultControls, setDefaultControls] = useState<SearchOverrides>(blankControls);
@@ -541,6 +576,7 @@ export default function SmartSearchAdminPage() {
             <button onClick={reindexNow} style={buttonStyle("#166534")}>Reindex</button>
             <button onClick={loadAnalytics} style={buttonStyle("#334155")}>Analytics</button>
             <button onClick={sendAnalyticsTest} style={outlineButtonStyle}>Test analytics</button>
+            <a href="/smartsearch-admin/analytics" style={linkButtonStyle}>Analytics page</a>
           </div>
 
           {status && (
