@@ -467,8 +467,32 @@ export async function GET(req: NextRequest) {
     });
 
   if (results.hits) {
-    const supplementalSearches: Array<{ kind: "aed" | "brand" | "category_family" | "recall"; search: Promise<any> }> = [];
+    const supplementalSearches: Array<{ kind: "aed" | "brand" | "category_family" | "recall" | "pinned"; search: Promise<any> }> = [];
     const supplementalBase = filters.join(" && ");
+    const pinnedSkus = getPinnedSkusForQuery(q, controls);
+
+    for (const sku of pinnedSkus.slice(0, 24)) {
+      supplementalSearches.push({
+        kind: "pinned",
+        search: typesenseSearch
+          .collections(COLLECTION_NAME)
+          .documents()
+          .search({
+            q: sku,
+            query_by: "sku,all_skus",
+            query_by_weights: "30,24",
+            filter_by: supplementalBase,
+            facet_by: "brand,categories,sold_by,color,price,availability",
+            max_facet_values: facetLimit,
+            sort_by: normalizeSort(sort),
+            per_page: 4,
+            limit_hits: SEARCH_HIT_LIMIT,
+            page: 1,
+            num_typos: 0,
+            prefix: false,
+          }),
+      });
+    }
 
     if (isAedUnitQuery(q) && !category && !categoryIds.length) {
       supplementalSearches.push(

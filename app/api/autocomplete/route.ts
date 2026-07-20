@@ -3,7 +3,7 @@ import { typesenseSearch } from "../../../lib/typesense";
 import { buildSmartSearchQuery } from "../../../lib/smart-search-translator";
 import { normalizeSearchText } from "../../../lib/search-language";
 import { applyBrandQueryRanking, applyHiddenSkuFilter, applyIntentRanking, applyPinnedSkuRanking, applyPrivateCategoryFilter } from "../../../lib/search-ranking";
-import { getEffectiveSearchOverrides } from "../../../lib/search-overrides";
+import { getEffectiveSearchOverrides, getPinnedSkusForQuery } from "../../../lib/search-overrides";
 import { STORE_URL, absoluteStoreUrl } from "../../../lib/store-url";
 
 const COLLECTION_NAME = "emrn_products";
@@ -160,6 +160,54 @@ function includesAny(text: string, terms: string[]) {
   return terms.some((term) => text.includes(normalizeSearchText(term)));
 }
 
+function hitText(hit: any) {
+  const doc = hit.document || {};
+  return normalizeSearchText(
+    [
+      doc.name,
+      doc.parent_name,
+      doc.brand,
+      doc.sold_by,
+      Array.isArray(doc.categories) ? doc.categories.join(" ") : doc.categories,
+      doc.variant_label,
+      doc.option_text,
+      doc.search_text,
+    ]
+      .filter(Boolean)
+      .join(" ")
+  );
+}
+
+function applyAutocompleteIvGuard(hits: any[] = [], originalQuery: string, translatedQuery: string) {
+  const query = normalizeSearchText(`${originalQuery} ${translatedQuery}`);
+  const isIvQuery = includesAny(query, [
+    "fournitures pour perfusion intraveineuse",
+    "fourniture pour perfusion intraveineuse",
+    "fournitures intraveineuses",
+    "intraveineuse",
+    "intraveineux",
+    "perfusion",
+    "iv supplies",
+    "iv administration",
+    "iv catheter",
+    "iv solution",
+    "intravenous",
+  ]);
+
+  if (!isIvQuery) return hits;
+
+  const score = (hit: any) => {
+    const text = hitText(hit);
+    let value = 0;
+    if (includesAny(text, ["iv administration", "iv catheter", "iv catheters", "iv solution", "intravenous", "nexiva", "vacutainer", "saline", "sodium chloride"])) value += 700;
+    if (includesAny(text, ["catheter", "catheters", "needle-free", "needle free", "injection", "connector", "extension set", "infusion"])) value += 240;
+    if (includesAny(text, ["furniture", "furnishings", "dresser", "drawer", "chest", "bookcase", "wardrobe", "bedside", "cabinet"])) value -= 900;
+    return value;
+  };
+
+  return [...hits].sort((a, b) => score(b) - score(a));
+}
+
 function autocompleteRecallQueries(originalQuery: string, translatedQuery: string) {
   const original = normalizeSearchText(originalQuery);
   const query = normalizeSearchText(`${originalQuery} ${translatedQuery}`);
@@ -195,6 +243,9 @@ function autocompleteRecallQueries(originalQuery: string, translatedQuery: strin
   }
   if (includesAny(query, ["medical bag", "medical bags", "medic bag", "medic bags", "trauma bag", "trauma bags", "ems bag", "emt bag", "jump bag", "jump bags", "sac medical", "sac médical", "sacs medicaux", "sacs médicaux"])) {
     add("medical bag", "trauma bag", "ems bag", "medical backpack");
+  }
+  if (includesAny(query, ["fournitures pour perfusion intraveineuse", "fourniture pour perfusion intraveineuse", "fournitures intraveineuses", "intraveineuse", "intraveineux", "perfusion", "iv supplies", "iv administration", "iv catheter", "iv solution", "intravenous"])) {
+    add("IV catheter", "IV administration", "IV solution", "intravenous");
   }
   if (includesAny(query, ["qcpr", "q cpr", "little baby", "little family", "little junior", "little anne", "baby qcpr", "family qcpr", "junior qcpr"])) {
     add(originalQuery, "little baby qcpr", "little family qcpr", "little junior qcpr", "little anne qcpr", "qcpr manikin");
@@ -240,6 +291,26 @@ export async function GET(req: NextRequest) {
     });
 
   const supplementalSearches: Promise<any>[] = [];
+  const pinnedSkus = getPinnedSkusForQuery(q, controls);
+
+  for (const sku of pinnedSkus.slice(0, 12)) {
+    supplementalSearches.push(
+      typesenseSearch
+        .collections(COLLECTION_NAME)
+        .documents()
+        .search({
+          q: sku,
+          query_by: "sku,all_skus",
+          query_by_weights: "30,24",
+          filter_by: "is_visible:=true",
+          facet_by: "brand,categories",
+          max_facet_values: 16,
+          per_page: 4,
+          num_typos: 0,
+          prefix: false,
+        })
+    );
+  }
 
   if (isAedUnitQuery(q)) {
     supplementalSearches.push(
@@ -324,8 +395,12 @@ export async function GET(req: NextRequest) {
 
   const hits = applyPinnedSkuRanking(
     applyBrandQueryRanking(
-      applyIntentRanking(
-        applyPrivateCategoryFilter(applyHiddenSkuFilter(mergeHits(supplementalHits, results.hits || []), controls), customerId, controls),
+      applyAutocompleteIvGuard(
+        applyIntentRanking(
+          applyPrivateCategoryFilter(applyHiddenSkuFilter(mergeHits(supplementalHits, results.hits || []), controls), customerId, controls),
+          q,
+          smartQuery.search_query
+        ),
         q,
         smartQuery.search_query
       ),

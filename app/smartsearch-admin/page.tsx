@@ -24,6 +24,16 @@ type SearchOverrides = {
   noResultsSuggestions: Record<string, string[]>;
 };
 
+type PreviewProduct = {
+  name?: string;
+  parent_name?: string;
+  sku?: string;
+  brand?: string;
+  image?: string;
+  url?: string;
+  smart_reasons?: string[];
+};
+
 const blankControls: SearchOverrides = {
   redirects: [],
   pinnedSkus: {},
@@ -92,6 +102,13 @@ export default function SmartSearchAdminPage() {
   const [savedRuntime, setSavedRuntime] = useState<SearchOverrides>(blankControls);
   const [effectiveControls, setEffectiveControls] = useState<SearchOverrides>(blankControls);
   const [defaultControls, setDefaultControls] = useState<SearchOverrides>(blankControls);
+  const [controlTerm, setControlTerm] = useState("");
+  const [controlPinnedSkus, setControlPinnedSkus] = useState("");
+  const [controlSynonyms, setControlSynonyms] = useState("");
+  const [controlSuggestions, setControlSuggestions] = useState("");
+  const [previewProducts, setPreviewProducts] = useState<PreviewProduct[]>([]);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewStatus, setPreviewStatus] = useState("");
 
   const runtime = useMemo<SearchOverrides>(
     () => ({
@@ -309,6 +326,107 @@ export default function SmartSearchAdminPage() {
     setStatus(`Applied ${applied} bulk rule${applied === 1 ? "" : "s"}. Click Save to publish.`);
   }
 
+  function upsertMappedRow(
+    rows: Array<{ term: string; values: string }>,
+    setRows: (rows: Array<{ term: string; values: string }>) => void,
+    term: string,
+    values: string
+  ) {
+    const cleanTerm = term.trim();
+    const cleanValues = values.trim();
+    if (!cleanTerm || !cleanValues) {
+      setStatus("Add a search term and values first.");
+      return false;
+    }
+
+    const index = rows.findIndex((row) => row.term.trim().toLowerCase() === cleanTerm.toLowerCase());
+    if (index >= 0) {
+      const next = [...rows];
+      next[index] = { term: cleanTerm, values: cleanValues };
+      setRows(next);
+    } else {
+      setRows([{ term: cleanTerm, values: cleanValues }, ...rows]);
+    }
+    return true;
+  }
+
+  function addPinnedFromBuilder() {
+    if (upsertMappedRow(pinnedRows, setPinnedRows, controlTerm, controlPinnedSkus)) {
+      setStatus("Pinned SKUs added. Put the most important SKU first, then click Save.");
+    }
+  }
+
+  function loadSavedPinnedRule(term: string, skus: string[]) {
+    setControlTerm(term);
+    setControlPinnedSkus(joinCsv(skus));
+    setStatus(`Loaded pinned rule for "${term}". Edit the SKU order, then click Add / update pins and Save.`);
+  }
+
+  function addSynonymsFromBuilder() {
+    if (upsertMappedRow(boostRows, setBoostRows, controlTerm, controlSynonyms)) {
+      setStatus("Synonyms added. Click Save to publish.");
+    }
+  }
+
+  function addSuggestionsFromBuilder() {
+    if (upsertMappedRow(noResultsRows, setNoResultsRows, controlTerm, controlSuggestions)) {
+      setStatus("No-results suggestions added. Click Save to publish.");
+    }
+  }
+
+  function openSearchTest() {
+    const cleanTerm = controlTerm.trim();
+    if (!cleanTerm) {
+      setStatus("Enter a search term to test.");
+      return;
+    }
+    window.open(`/api/search?q=${encodeURIComponent(cleanTerm)}`, "_blank", "noopener,noreferrer");
+  }
+
+  function openAutocompleteTest() {
+    const cleanTerm = controlTerm.trim();
+    if (!cleanTerm) {
+      setStatus("Enter a search term to test.");
+      return;
+    }
+    window.open(`/api/autocomplete?q=${encodeURIComponent(cleanTerm)}`, "_blank", "noopener,noreferrer");
+  }
+
+  function pinPreviewSku(sku: string) {
+    const cleanSku = sku.trim();
+    if (!cleanSku) return;
+    const current = splitCsv(controlPinnedSkus);
+    const next = [cleanSku, ...current.filter((item) => item.toLowerCase() !== cleanSku.toLowerCase())];
+    setControlPinnedSkus(joinCsv(next));
+    setStatus(`${cleanSku} added to the front of the pinned SKU order. Click Add / update pins, then Save.`);
+  }
+
+  async function loadLiveResults() {
+    const cleanTerm = controlTerm.trim();
+    if (!cleanTerm) {
+      setPreviewStatus("Enter a search term first.");
+      return;
+    }
+
+    setPreviewLoading(true);
+    setPreviewStatus("Loading live results...");
+    try {
+      const res = await fetch(`/api/search?q=${encodeURIComponent(cleanTerm)}&per_page=16`, {
+        headers: password ? { "x-smartsearch-admin-password": password } : {},
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Could not load live results.");
+      const products = (data.hits || []).map((hit: { document?: PreviewProduct }) => hit.document || {});
+      setPreviewProducts(products);
+      setPreviewStatus(`${products.length} live result${products.length === 1 ? "" : "s"} loaded.`);
+    } catch (error) {
+      setPreviewProducts([]);
+      setPreviewStatus(error instanceof Error ? error.message : "Could not load live results.");
+    } finally {
+      setPreviewLoading(false);
+    }
+  }
+
   async function reindexNow() {
     setStatus("Reindexing products. This can take about a minute...");
     const res = await fetch("/api/reindex", {
@@ -368,6 +486,92 @@ export default function SmartSearchAdminPage() {
         )}
 
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 18, marginTop: analytics ? 18 : 0 }}>
+          <Panel title="Specific Search Control" help="Use this when one search term needs hand control. Pin SKUs to force result order, add synonyms to expand matching, or add no-results suggestions. Save after adding.">
+            <div style={{ display: "grid", gap: 10 }}>
+              <label style={fieldLabelStyle}>
+                Search term
+                <input
+                  value={controlTerm}
+                  onChange={(event) => setControlTerm(event.target.value)}
+                  placeholder="fournitures pour perfusion intraveineuse"
+                  style={inputStyle}
+                />
+              </label>
+              <label style={fieldLabelStyle}>
+                Pinned SKUs, first result first
+                <input
+                  value={controlPinnedSkus}
+                  onChange={(event) => setControlPinnedSkus(event.target.value)}
+                  placeholder="BD383580, BD383578, BD383577"
+                  style={inputStyle}
+                />
+              </label>
+              <label style={fieldLabelStyle}>
+                Synonyms / extra terms
+                <input
+                  value={controlSynonyms}
+                  onChange={(event) => setControlSynonyms(event.target.value)}
+                  placeholder="IV supplies, IV catheter, IV administration"
+                  style={inputStyle}
+                />
+              </label>
+              <label style={fieldLabelStyle}>
+                No-results suggestions
+                <input
+                  value={controlSuggestions}
+                  onChange={(event) => setControlSuggestions(event.target.value)}
+                  placeholder="IV catheters, saline, IV administration sets"
+                  style={inputStyle}
+                />
+              </label>
+            </div>
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 12 }}>
+              <button onClick={addPinnedFromBuilder} style={buttonStyle("#c34d50")}>Add / update pins</button>
+              <button onClick={addSynonymsFromBuilder} style={buttonStyle("#14365d")}>Add / update synonyms</button>
+              <button onClick={addSuggestionsFromBuilder} style={buttonStyle("#334155")}>Add suggestions</button>
+              <button onClick={loadLiveResults} style={buttonStyle("#166534")}>{previewLoading ? "Loading..." : "Load live results"}</button>
+              <button onClick={openAutocompleteTest} style={outlineButtonStyle}>Test autocomplete</button>
+              <button onClick={openSearchTest} style={outlineButtonStyle}>Test full search</button>
+            </div>
+            <p style={{ margin: "12px 0 0", color: "#64748b", lineHeight: 1.45 }}>
+              Synonyms broaden what SmartSearch looks for. Pins are stronger: they force chosen SKUs to the top for that search term.
+            </p>
+            {previewStatus && <p style={{ margin: "10px 0 0", color: previewStatus.includes("Could not") ? "#b91c1c" : "#166534", fontWeight: 800 }}>{previewStatus}</p>}
+            {previewProducts.length ? (
+              <div style={{ display: "grid", gap: 8, marginTop: 12, maxHeight: 420, overflow: "auto", border: "1px solid #e5e7eb", borderRadius: 14, padding: 10, background: "#f8fafc" }}>
+                {previewProducts.map((product, index) => (
+                  <div key={`${product.sku || product.name}-${index}`} style={{ display: "grid", gridTemplateColumns: "54px 1fr auto", gap: 10, alignItems: "center", border: "1px solid #e2e8f0", borderRadius: 12, background: "#fff", padding: 10 }}>
+                    <div style={{ width: 54, height: 54, border: "1px solid #eef2f7", borderRadius: 10, display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", background: "#fff" }}>
+                      {product.image ? <img src={product.image} alt="" style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} /> : <span style={{ color: "#94a3b8", fontSize: 11 }}>No img</span>}
+                    </div>
+                    <div style={{ minWidth: 0 }}>
+                      <strong style={{ color: "#111827", display: "block", overflowWrap: "anywhere" }}>{product.parent_name || product.name || "Untitled product"}</strong>
+                      <div style={{ color: "#64748b", fontSize: 13, marginTop: 3 }}>
+                        {product.brand || "EMRN"} {product.sku ? `• SKU: ${product.sku}` : ""}
+                      </div>
+                      {product.smart_reasons?.length ? (
+                        <div style={{ color: "#166534", fontSize: 12, fontWeight: 800, marginTop: 4 }}>{product.smart_reasons.slice(0, 2).join(", ")}</div>
+                      ) : null}
+                    </div>
+                    <button onClick={() => pinPreviewSku(product.sku || "")} disabled={!product.sku} style={smallActionButtonStyle}>
+                      Pin
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+            {Object.keys(savedRuntime.pinnedSkus || {}).length ? (
+              <div style={{ marginTop: 12 }}>
+                <div style={{ color: "#64748b", fontWeight: 900, fontSize: 12, marginBottom: 6 }}>Load saved pinned rule</div>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  {Object.entries(savedRuntime.pinnedSkus).slice(0, 8).map(([term, skus]) => (
+                    <button key={term} onClick={() => loadSavedPinnedRule(term, skus)} style={outlineButtonStyle}>{term}</button>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+          </Panel>
+
           <Panel title="Bulk Keyword Rules" help="Paste many rules at once. Use pin, synonym, suggest, hide, or redirect. Example: synonym: cat tourniquet => combat application tourniquet, CAT">
             <textarea
               value={bulkRules}
@@ -414,7 +618,7 @@ export default function SmartSearchAdminPage() {
               Multi-directional synonyms
             </label>
             <p style={{ margin: "0 0 12px", color: "#475569", lineHeight: 1.45 }}>
-              On means glove also finds gloves, and gloves also finds glove. Turn it off for one-way rules.
+              On means glove also finds gloves, and gloves also finds glove. Synonyms add extra search terms; they do not guarantee order. Use pinned SKUs when specific products must appear first.
             </p>
             <Rows rows={boostRows} setRows={setBoostRows} leftLabel="Keyword" rightLabel="Synonyms, comma separated" />
             <SavedRules title="Saved synonyms" map={savedRuntime.boostTerms} emptyText="No saved synonyms yet." />
@@ -682,6 +886,10 @@ function Rows({
   leftLabel: string;
   rightLabel: string;
 }) {
+  const [showAll, setShowAll] = useState(false);
+  const previewCount = 5;
+  const visibleRows = showAll ? rows : rows.slice(0, previewCount);
+
   return (
     <div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1.5fr 38px", gap: 8, color: "#64748b", fontWeight: 900, fontSize: 12, marginBottom: 6 }}>
@@ -690,13 +898,14 @@ function Rows({
         <div />
       </div>
 
-      {rows.map((row, index) => (
-        <div key={index} style={{ display: "grid", gridTemplateColumns: "1fr 1.5fr 38px", gap: 8, marginBottom: 8 }}>
+      {visibleRows.map((row, actualIndex) => {
+        return (
+        <div key={actualIndex} style={{ display: "grid", gridTemplateColumns: "1fr 1.5fr 38px", gap: 8, marginBottom: 8 }}>
           <input
             value={row.term}
             onChange={(event) => {
               const next = [...rows];
-              next[index] = { ...row, term: event.target.value };
+              next[actualIndex] = { ...row, term: event.target.value };
               setRows(next);
             }}
             style={inputStyle}
@@ -705,16 +914,29 @@ function Rows({
             value={row.values}
             onChange={(event) => {
               const next = [...rows];
-              next[index] = { ...row, values: event.target.value };
+              next[actualIndex] = { ...row, values: event.target.value };
               setRows(next);
             }}
             style={inputStyle}
           />
-          <button onClick={() => setRows(rows.filter((_, rowIndex) => rowIndex !== index))} style={smallButtonStyle}>×</button>
+          <button onClick={() => setRows(rows.filter((_, rowIndex) => rowIndex !== actualIndex))} style={smallButtonStyle}>×</button>
         </div>
-      ))}
+      )})}
 
-      <button onClick={() => setRows([...rows, { term: "", values: "" }])} style={outlineButtonStyle}>+ Add row</button>
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+        <button onClick={() => {
+          setRows([{ term: "", values: "" }, ...rows]);
+          setShowAll(false);
+        }} style={outlineButtonStyle}>+ Add row</button>
+        {rows.length > previewCount ? (
+          <button onClick={() => setShowAll(!showAll)} style={outlineButtonStyle}>
+            {showAll ? "Show fewer" : `View all ${rows.length} rows`}
+          </button>
+        ) : null}
+        {rows.length > previewCount && !showAll ? (
+          <span style={{ color: "#64748b", fontWeight: 800 }}>{rows.length - previewCount} more hidden</span>
+        ) : null}
+      </div>
     </div>
   );
 }
@@ -786,6 +1008,14 @@ const inputStyle = {
   background: "#fff",
 };
 
+const fieldLabelStyle = {
+  display: "grid",
+  gap: 6,
+  color: "#475569",
+  fontSize: 13,
+  fontWeight: 900,
+};
+
 const textareaStyle = {
   width: "100%",
   minHeight: 160,
@@ -803,6 +1033,17 @@ const smallButtonStyle = {
   borderRadius: 12,
   background: "#fee2e2",
   color: "#991b1b",
+  fontWeight: 900,
+  cursor: "pointer",
+};
+
+const smallActionButtonStyle = {
+  height: 38,
+  border: 0,
+  borderRadius: 999,
+  background: "#c34d50",
+  color: "#fff",
+  padding: "0 14px",
   fontWeight: 900,
   cursor: "pointer",
 };
