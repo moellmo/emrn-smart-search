@@ -16,6 +16,9 @@ export type PrivateCategoryRule = {
 export type SearchOverrides = {
   redirects: SearchRedirect[];
   pinnedSkus: Record<string, string[]>;
+  brandPinnedSkus: Record<string, string[]>;
+  categoryPinnedSkus: Record<string, string[]>;
+  categoryIdPinnedSkus: Record<string, string[]>;
   hiddenSkus: string[];
   privateCategoryRules: PrivateCategoryRule[];
   boostTerms: Record<string, string[]>;
@@ -50,6 +53,9 @@ export const defaultSearchOverrides: SearchOverrides = {
     "cat tourniquet": ["30001OR", "30001NO", "30001BL"],
     "combat application tourniquet": ["30001OR", "30001NO", "30001BL"],
   },
+  brandPinnedSkus: {},
+  categoryPinnedSkus: {},
+  categoryIdPinnedSkus: {},
 
   hiddenSkus: ["X-REDO-RETURN-PACKAGE-PROTECTION"],
   privateCategoryRules: [],
@@ -185,6 +191,9 @@ export function sanitizeSearchOverrides(input: Partial<SearchOverrides> | null |
       : [],
 
     pinnedSkus: cleanStringMap(input?.pinnedSkus),
+    brandPinnedSkus: cleanStringMap(input?.brandPinnedSkus),
+    categoryPinnedSkus: cleanStringMap(input?.categoryPinnedSkus),
+    categoryIdPinnedSkus: cleanStringMap(input?.categoryIdPinnedSkus),
     hiddenSkus: cleanStringList(input?.hiddenSkus),
     privateCategoryRules: cleanPrivateCategoryRules(input?.privateCategoryRules),
     boostTerms: cleanStringMap(input?.boostTerms),
@@ -200,6 +209,18 @@ export function mergeSearchOverrides(runtime?: Partial<SearchOverrides> | null):
     pinnedSkus: {
       ...defaultSearchOverrides.pinnedSkus,
       ...cleanRuntime.pinnedSkus,
+    },
+    brandPinnedSkus: {
+      ...defaultSearchOverrides.brandPinnedSkus,
+      ...cleanRuntime.brandPinnedSkus,
+    },
+    categoryPinnedSkus: {
+      ...defaultSearchOverrides.categoryPinnedSkus,
+      ...cleanRuntime.categoryPinnedSkus,
+    },
+    categoryIdPinnedSkus: {
+      ...defaultSearchOverrides.categoryIdPinnedSkus,
+      ...cleanRuntime.categoryIdPinnedSkus,
     },
     hiddenSkus: Array.from(new Set([...defaultSearchOverrides.hiddenSkus, ...cleanRuntime.hiddenSkus])),
     privateCategoryRules: [...defaultSearchOverrides.privateCategoryRules, ...cleanRuntime.privateCategoryRules],
@@ -302,6 +323,46 @@ export function getPinnedSkusForQuery(query: string, controls = defaultSearchOve
     if (matchesOverrideTerm(normalized, normalizedTerm)) {
       values.forEach((sku) => sku && skus.add(sku));
     }
+  }
+
+  return Array.from(skus);
+}
+
+function addMappedPinsForValue(
+  skus: Set<string>,
+  map: Record<string, string[]> = {},
+  value: string | number | null | undefined,
+  exact = false
+) {
+  const normalized = normalizeOverrideQuery(String(value || ""));
+  if (!normalized) return;
+
+  for (const [term, values] of Object.entries(map)) {
+    const normalizedTerm = normalizeOverrideQuery(term);
+    const matches = exact ? normalized === normalizedTerm : matchesOverrideTerm(normalized, normalizedTerm);
+    if (matches) values.forEach((sku) => sku && skus.add(sku));
+  }
+}
+
+export function getPinnedSkusForContext(
+  context: {
+    query?: string | null;
+    brand?: string | null;
+    category?: string | null;
+    categoryId?: string | number | null;
+    categoryIds?: Array<string | number> | null;
+  },
+  controls = defaultSearchOverrides
+) {
+  const skus = new Set<string>();
+
+  getPinnedSkusForQuery(context.query || "", controls).forEach((sku) => sku && skus.add(sku));
+  addMappedPinsForValue(skus, controls.brandPinnedSkus, context.brand, true);
+  addMappedPinsForValue(skus, controls.categoryPinnedSkus, context.category);
+  addMappedPinsForValue(skus, controls.categoryIdPinnedSkus, context.categoryId, true);
+
+  for (const id of context.categoryIds || []) {
+    addMappedPinsForValue(skus, controls.categoryIdPinnedSkus, id, true);
   }
 
   return Array.from(skus);

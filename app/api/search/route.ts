@@ -2,8 +2,8 @@ import { after, NextRequest, NextResponse } from "next/server";
 import { typesenseAdmin, typesenseSearch } from "../../../lib/typesense";
 import { buildSmartSearchQuery } from "../../../lib/smart-search-translator";
 import { normalizeSearchText } from "../../../lib/search-language";
-import { applyBrandQueryRanking, applyHiddenSkuFilter, applyIntentRanking, applyPinnedSkuRanking, applyPrivateCategoryFilter, explainResult } from "../../../lib/search-ranking";
-import { getEffectiveSearchOverrides, getPinnedSkusForQuery } from "../../../lib/search-overrides";
+import { applyBrandQueryRanking, applyHiddenSkuFilter, applyIntentRanking, applyPinnedSkuListRanking, applyPrivateCategoryFilter, explainResult } from "../../../lib/search-ranking";
+import { getEffectiveSearchOverrides, getPinnedSkusForContext } from "../../../lib/search-overrides";
 import { STORE_URL, absoluteStoreUrl } from "../../../lib/store-url";
 
 const COLLECTION_NAME = "emrn_products";
@@ -528,7 +528,7 @@ export async function GET(req: NextRequest) {
   if (results.hits) {
     const supplementalSearches: Array<{ kind: "aed" | "brand" | "category_family" | "recall" | "pinned"; search: Promise<any> }> = [];
     const supplementalBase = filters.join(" && ");
-    const pinnedSkus = getPinnedSkusForQuery(q, controls);
+    const pinnedSkus = getPinnedSkusForContext({ query: q, brand, category, categoryId, categoryIds }, controls);
 
     for (const sku of pinnedSkus.slice(0, 24)) {
       supplementalSearches.push({
@@ -663,19 +663,18 @@ export async function GET(req: NextRequest) {
       .map((item) => item.result);
     const supplementalHits = fulfilledSupplementalResults.flatMap((result) => result?.hits || []);
 
-    const rankedHits = applyPinnedSkuRanking(
-      applyBrandQueryRanking(
-        applyIntentRanking(
-          applyPrivateCategoryFilter(applyHiddenSkuFilter(mergeHits(supplementalHits, results.hits), controls), customerId, controls),
-          q,
-          smartQuery.search_query
-        ),
-        q
+    const rankedHits = applyBrandQueryRanking(
+      applyIntentRanking(
+        applyPrivateCategoryFilter(applyHiddenSkuFilter(mergeHits(supplementalHits, results.hits), controls), customerId, controls),
+        q,
+        smartQuery.search_query
       ),
-      q,
-      controls
+      q
     );
-    const filteredHits = applyClientSort(prioritizePatientMonitorUnits(rankedHits, q, smartQuery.search_query), sort);
+    const filteredHits = applyPinnedSkuListRanking(
+      applyClientSort(prioritizePatientMonitorUnits(rankedHits, q, smartQuery.search_query), sort),
+      pinnedSkus
+    );
 
     if (fulfilledSupplementalResults.length) {
       const facetBase =
@@ -703,16 +702,18 @@ export async function GET(req: NextRequest) {
         variant_id: hit.document?.variant_id || 0,
         is_variant: Boolean(hit.document?.is_variant),
         popularity_score: Number(hit.document?.popularity_score || 0),
-        smart_reasons: explainResult(hit, q, controls),
+        smart_reasons: explainResult(hit, q, controls, pinnedSkus),
       },
     }));
   }
+
+  const responsePinnedSkus = getPinnedSkusForContext({ query: q, brand, category, categoryId, categoryIds }, controls);
 
   const responseBody = {
     ...results,
     ...smartQuery,
     fallback_terms: results.hits?.length ? [] : smartQuery.fallback_terms,
-    pinned_skus: getPinnedSkusForQuery(q, controls),
+    pinned_skus: responsePinnedSkus,
     active_filters: {
       brand,
       category,

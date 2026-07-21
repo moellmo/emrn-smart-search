@@ -37,7 +37,10 @@ export function applyPrivateCategoryFilter(hits: any[] = [], customerId: string 
 }
 
 export function applyPinnedSkuRanking(hits: any[] = [], originalQuery: string, controls: SearchOverrides) {
-  const pinnedSkus = getPinnedSkusForQuery(originalQuery, controls);
+  return applyPinnedSkuListRanking(hits, getPinnedSkusForQuery(originalQuery, controls));
+}
+
+export function applyPinnedSkuListRanking(hits: any[] = [], pinnedSkus: string[] = []) {
   if (!pinnedSkus.length) return hits;
 
   const pinned = pinnedSkus.map((sku) => sku.toLowerCase());
@@ -1186,9 +1189,9 @@ export function applyIntentRanking(hits: any[] = [], originalQuery: string, sear
   });
 }
 
-export function explainResult(hit: any, originalQuery: string, controls: SearchOverrides) {
+export function explainResult(hit: any, originalQuery: string, controls: SearchOverrides, pinnedSkuOverride?: string[]) {
   const doc = hit.document || {};
-  const pinnedSkus = getPinnedSkusForQuery(originalQuery, controls).map((sku) => sku.toLowerCase());
+  const pinnedSkus = (pinnedSkuOverride || getPinnedSkusForQuery(originalQuery, controls)).map((sku) => sku.toLowerCase());
   const sku = String(doc.sku || "").toLowerCase();
 
   const reasons: string[] = [];

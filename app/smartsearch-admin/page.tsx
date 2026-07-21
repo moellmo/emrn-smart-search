@@ -18,11 +18,16 @@ type PrivateCategoryRule = {
 type SearchOverrides = {
   redirects: SearchRedirect[];
   pinnedSkus: Record<string, string[]>;
+  brandPinnedSkus: Record<string, string[]>;
+  categoryPinnedSkus: Record<string, string[]>;
+  categoryIdPinnedSkus: Record<string, string[]>;
   hiddenSkus: string[];
   privateCategoryRules: PrivateCategoryRule[];
   boostTerms: Record<string, string[]>;
   noResultsSuggestions: Record<string, string[]>;
 };
+
+type PinScope = "query" | "brand" | "category" | "category_id";
 
 type PreviewProduct = {
   name?: string;
@@ -74,6 +79,9 @@ const PREVIEW_PAGE_SIZE = 48;
 const blankControls: SearchOverrides = {
   redirects: [],
   pinnedSkus: {},
+  brandPinnedSkus: {},
+  categoryPinnedSkus: {},
+  categoryIdPinnedSkus: {},
   hiddenSkus: [],
   privateCategoryRules: [],
   boostTerms: {},
@@ -131,6 +139,9 @@ export default function SmartSearchAdminPage() {
   const [privateCategoryRows, setPrivateCategoryRows] = useState<Array<{ enabled: boolean; label: string; categoryIds: string; categoryNames: string; allowedCustomerIds: string }>>([]);
   const [redirects, setRedirects] = useState<Array<{ terms: string; url: string }>>([]);
   const [pinnedRows, setPinnedRows] = useState<Array<{ term: string; values: string }>>([]);
+  const [brandPinnedRows, setBrandPinnedRows] = useState<Array<{ term: string; values: string }>>([]);
+  const [categoryPinnedRows, setCategoryPinnedRows] = useState<Array<{ term: string; values: string }>>([]);
+  const [categoryIdPinnedRows, setCategoryIdPinnedRows] = useState<Array<{ term: string; values: string }>>([]);
   const [boostRows, setBoostRows] = useState<Array<{ term: string; values: string }>>([]);
   const [noResultsRows, setNoResultsRows] = useState<Array<{ term: string; values: string }>>([]);
   const [bulkRules, setBulkRules] = useState("");
@@ -139,6 +150,7 @@ export default function SmartSearchAdminPage() {
   const [savedRuntime, setSavedRuntime] = useState<SearchOverrides>(blankControls);
   const [effectiveControls, setEffectiveControls] = useState<SearchOverrides>(blankControls);
   const [defaultControls, setDefaultControls] = useState<SearchOverrides>(blankControls);
+  const [controlScope, setControlScope] = useState<PinScope>("query");
   const [controlTerm, setControlTerm] = useState("");
   const [controlPinnedSkus, setControlPinnedSkus] = useState("");
   const [controlSynonyms, setControlSynonyms] = useState("");
@@ -160,6 +172,9 @@ export default function SmartSearchAdminPage() {
         }))
         .filter((row) => row.terms.length && row.url),
       pinnedSkus: rowsToMap(pinnedRows),
+      brandPinnedSkus: rowsToMap(brandPinnedRows),
+      categoryPinnedSkus: rowsToMap(categoryPinnedRows),
+      categoryIdPinnedSkus: rowsToMap(categoryIdPinnedRows),
       hiddenSkus: splitCsv(hiddenSkus),
       privateCategoryRules: privateCategoryRows
         .map((row) => ({
@@ -173,7 +188,7 @@ export default function SmartSearchAdminPage() {
       boostTerms: twoWaySynonyms ? rowsToBidirectionalMap(boostRows) : rowsToMap(boostRows),
       noResultsSuggestions: rowsToMap(noResultsRows),
     }),
-    [redirects, pinnedRows, boostRows, noResultsRows, hiddenSkus, privateCategoryRows, twoWaySynonyms]
+    [redirects, pinnedRows, brandPinnedRows, categoryPinnedRows, categoryIdPinnedRows, boostRows, noResultsRows, hiddenSkus, privateCategoryRows, twoWaySynonyms]
   );
 
   async function loadControls() {
@@ -203,6 +218,9 @@ export default function SmartSearchAdminPage() {
       }))
     );
     setPinnedRows(mapToRows(controls.pinnedSkus));
+    setBrandPinnedRows(mapToRows(controls.brandPinnedSkus));
+    setCategoryPinnedRows(mapToRows(controls.categoryPinnedSkus));
+    setCategoryIdPinnedRows(mapToRows(controls.categoryIdPinnedSkus));
     setBoostRows(mapToRows(controls.boostTerms));
     setNoResultsRows(mapToRows(controls.noResultsSuggestions));
     setHiddenSkus(joinCsv(controls.hiddenSkus));
@@ -217,7 +235,7 @@ export default function SmartSearchAdminPage() {
     );
     setLoaded(true);
     setStatus(
-      `Loaded ${Object.keys(controls.boostTerms || {}).length} saved synonym rule(s) and ${Object.keys(controls.pinnedSkus || {}).length} saved pinned search term(s).`
+      `Loaded ${Object.keys(controls.boostTerms || {}).length} saved synonym rule(s), ${Object.keys(controls.pinnedSkus || {}).length} search pin(s), ${Object.keys(controls.brandPinnedSkus || {}).length} brand pin(s), and ${Object.keys(controls.categoryPinnedSkus || {}).length + Object.keys(controls.categoryIdPinnedSkus || {}).length} category pin(s).`
     );
   }
 
@@ -243,6 +261,9 @@ export default function SmartSearchAdminPage() {
     setSavedRuntime(saved);
     setEffectiveControls(data.effective || saved);
     setPinnedRows(mapToRows(saved.pinnedSkus));
+    setBrandPinnedRows(mapToRows(saved.brandPinnedSkus));
+    setCategoryPinnedRows(mapToRows(saved.categoryPinnedSkus));
+    setCategoryIdPinnedRows(mapToRows(saved.categoryIdPinnedSkus));
     setBoostRows(mapToRows(saved.boostTerms));
     setNoResultsRows(mapToRows(saved.noResultsSuggestions));
     setHiddenSkus(joinCsv(saved.hiddenSkus));
@@ -262,7 +283,7 @@ export default function SmartSearchAdminPage() {
       }))
     );
     setStatus(
-      `Saved ${Object.keys(saved.boostTerms || {}).length} synonym rule(s) and ${Object.keys(saved.pinnedSkus || {}).length} pinned search term(s). SmartSearch will update within about 30 seconds.`
+      `Saved ${Object.keys(saved.boostTerms || {}).length} synonym rule(s), ${Object.keys(saved.pinnedSkus || {}).length} search pin(s), ${Object.keys(saved.brandPinnedSkus || {}).length} brand pin(s), and ${Object.keys(saved.categoryPinnedSkus || {}).length + Object.keys(saved.categoryIdPinnedSkus || {}).length} category pin(s). SmartSearch will update within about 30 seconds.`
     );
   }
 
@@ -315,6 +336,9 @@ export default function SmartSearchAdminPage() {
   function exportBulkRules() {
     const lines = [
       ...rowsToBulk("pin", pinnedRows),
+      ...rowsToBulk("pin-brand", brandPinnedRows),
+      ...rowsToBulk("pin-category", categoryPinnedRows),
+      ...rowsToBulk("pin-category-id", categoryIdPinnedRows),
       ...rowsToBulk("boost", boostRows),
       ...rowsToBulk("suggest", noResultsRows),
       ...splitCsv(hiddenSkus).map((sku) => `hide: ${sku}`),
@@ -333,6 +357,9 @@ export default function SmartSearchAdminPage() {
 
   function applyBulkRules() {
     const nextPinned = [...pinnedRows];
+    const nextBrandPinned = [...brandPinnedRows];
+    const nextCategoryPinned = [...categoryPinnedRows];
+    const nextCategoryIdPinned = [...categoryIdPinnedRows];
     const nextBoost = [...boostRows];
     const nextNoResults = [...noResultsRows];
     const nextRedirects = [...redirects];
@@ -344,7 +371,7 @@ export default function SmartSearchAdminPage() {
       const line = rawLine.trim();
       if (!line || line.startsWith("#")) continue;
 
-      const match = line.match(/^(pin|pinned|sku|boost|synonym|synonyms|suggest|suggestion|suggestions|hide|hidden|hide-category|private-category|redirect)\s*:\s*(.+)$/i);
+      const match = line.match(/^(pin|pinned|sku|pin-brand|brand-pin|pin-category|category-pin|pin-category-id|category-id-pin|boost|synonym|synonyms|suggest|suggestion|suggestions|hide|hidden|hide-category|private-category|redirect)\s*:\s*(.+)$/i);
       const type = (match?.[1] || "boost").toLowerCase();
       const body = (match?.[2] || line).trim();
 
@@ -378,6 +405,12 @@ export default function SmartSearchAdminPage() {
 
       if (type === "pin" || type === "pinned" || type === "sku") {
         nextPinned.push({ term, values });
+      } else if (type === "pin-brand" || type === "brand-pin") {
+        nextBrandPinned.push({ term, values });
+      } else if (type === "pin-category" || type === "category-pin") {
+        nextCategoryPinned.push({ term, values });
+      } else if (type === "pin-category-id" || type === "category-id-pin") {
+        nextCategoryIdPinned.push({ term, values });
       } else if (type === "suggest" || type === "suggestion" || type === "suggestions") {
         nextNoResults.push({ term, values });
       } else if (type === "redirect") {
@@ -389,6 +422,9 @@ export default function SmartSearchAdminPage() {
     }
 
     setPinnedRows(nextPinned);
+    setBrandPinnedRows(nextBrandPinned);
+    setCategoryPinnedRows(nextCategoryPinned);
+    setCategoryIdPinnedRows(nextCategoryIdPinned);
     setBoostRows(nextBoost);
     setNoResultsRows(nextNoResults);
     setRedirects(nextRedirects);
@@ -421,13 +457,37 @@ export default function SmartSearchAdminPage() {
     return true;
   }
 
+  function pinRowsForScope(scope: PinScope) {
+    if (scope === "brand") return { rows: brandPinnedRows, setRows: setBrandPinnedRows, label: "brand" };
+    if (scope === "category") return { rows: categoryPinnedRows, setRows: setCategoryPinnedRows, label: "category" };
+    if (scope === "category_id") return { rows: categoryIdPinnedRows, setRows: setCategoryIdPinnedRows, label: "category ID" };
+    return { rows: pinnedRows, setRows: setPinnedRows, label: "search term" };
+  }
+
+  function previewUrlForScope(pageToLoad: number) {
+    const cleanTerm = controlTerm.trim();
+    const params = new URLSearchParams({
+      q: controlScope === "query" ? cleanTerm : "*",
+      per_page: String(PREVIEW_PAGE_SIZE),
+      page: String(pageToLoad),
+    });
+
+    if (controlScope === "brand") params.set("brand", cleanTerm);
+    if (controlScope === "category") params.set("category", cleanTerm);
+    if (controlScope === "category_id") params.set("category_id", cleanTerm);
+
+    return `/api/search?${params.toString()}`;
+  }
+
   function addPinnedFromBuilder() {
-    if (upsertMappedRow(pinnedRows, setPinnedRows, controlTerm, controlPinnedSkus)) {
-      setStatus("Pinned SKUs added. Put the most important SKU first, then click Save.");
+    const scopedPins = pinRowsForScope(controlScope);
+    if (upsertMappedRow(scopedPins.rows, scopedPins.setRows, controlTerm, controlPinnedSkus)) {
+      setStatus(`Pinned SKUs added for this ${scopedPins.label}. Put the most important SKU first, then click Save.`);
     }
   }
 
-  function loadSavedPinnedRule(term: string, skus: string[]) {
+  function loadSavedPinnedRule(term: string, skus: string[], scope: PinScope = "query") {
+    setControlScope(scope);
     setControlTerm(term);
     setControlPinnedSkus(joinCsv(skus));
     setStatus(`Loaded pinned rule for "${term}". Edit the SKU order, then click Add / update pins and Save.`);
@@ -448,15 +508,15 @@ export default function SmartSearchAdminPage() {
   function openSearchTest() {
     const cleanTerm = controlTerm.trim();
     if (!cleanTerm) {
-      setStatus("Enter a search term to test.");
+      setStatus("Enter a search term, brand, category, or category ID to test.");
       return;
     }
-    window.open(`/api/search?q=${encodeURIComponent(cleanTerm)}`, "_blank", "noopener,noreferrer");
+    window.open(previewUrlForScope(1), "_blank", "noopener,noreferrer");
   }
 
   function openAutocompleteTest() {
     const cleanTerm = controlTerm.trim();
-    if (!cleanTerm) {
+    if (!cleanTerm || controlScope !== "query") {
       setStatus("Enter a search term to test.");
       return;
     }
@@ -474,6 +534,7 @@ export default function SmartSearchAdminPage() {
 
   function clearSpecificSearchControl() {
     setControlTerm("");
+    setControlScope("query");
     setControlPinnedSkus("");
     setControlSynonyms("");
     setControlSuggestions("");
@@ -496,14 +557,14 @@ export default function SmartSearchAdminPage() {
   async function loadPreviewPage(pageToLoad: number, append: boolean) {
     const cleanTerm = controlTerm.trim();
     if (!cleanTerm) {
-      setPreviewStatus("Enter a search term first.");
+      setPreviewStatus("Enter a search term, brand, category, or category ID first.");
       return;
     }
 
     setPreviewLoading(true);
     setPreviewStatus(append ? "Loading more live results..." : "Loading live results...");
     try {
-      const res = await fetch(`/api/search?q=${encodeURIComponent(cleanTerm)}&per_page=${PREVIEW_PAGE_SIZE}&page=${pageToLoad}`, {
+      const res = await fetch(previewUrlForScope(pageToLoad), {
         headers: password ? { "x-smartsearch-admin-password": password } : {},
       });
       const data = await res.json();
@@ -619,10 +680,30 @@ export default function SmartSearchAdminPage() {
         )}
 
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 18, marginTop: analytics ? 18 : 0 }}>
-          <Panel title="Specific Search Control" help="Use this when one search term needs hand control. Pin SKUs to force result order, add synonyms to expand matching, or add no-results suggestions. Save after adding.">
+          <Panel title="Specific Search Control" help="Use this when one search term, brand page, or category page needs hand control. Pin SKUs to force result order. Search terms can also use synonyms and no-results suggestions. Save after adding.">
             <div style={{ display: "grid", gap: 10 }}>
               <label style={fieldLabelStyle}>
-                Search term
+                Control type
+                <select
+                  value={controlScope}
+                  onChange={(event) => {
+                    setControlScope(event.target.value as PinScope);
+                    setPreviewProducts([]);
+                    setPreviewStatus("");
+                    setPreviewPage(0);
+                    setPreviewFound(0);
+                    setPreviewHasMore(false);
+                  }}
+                  style={inputStyle}
+                >
+                  <option value="query">Search term</option>
+                  <option value="brand">Brand page</option>
+                  <option value="category">Category name</option>
+                  <option value="category_id">Category ID</option>
+                </select>
+              </label>
+              <label style={fieldLabelStyle}>
+                {controlScope === "brand" ? "Brand name" : controlScope === "category" ? "Category name" : controlScope === "category_id" ? "Category ID" : "Search term"}
                 <input
                   value={controlTerm}
                   onChange={(event) => {
@@ -633,7 +714,7 @@ export default function SmartSearchAdminPage() {
                     setPreviewFound(0);
                     setPreviewHasMore(false);
                   }}
-                  placeholder="fournitures pour perfusion intraveineuse"
+                  placeholder={controlScope === "brand" ? "BD" : controlScope === "category" ? "IV Administration" : controlScope === "category_id" ? "123" : "fournitures pour perfusion intraveineuse"}
                   style={inputStyle}
                 />
               </label>
@@ -653,6 +734,7 @@ export default function SmartSearchAdminPage() {
                   onChange={(event) => setControlSynonyms(event.target.value)}
                   placeholder="IV supplies, IV catheter, IV administration"
                   style={inputStyle}
+                  disabled={controlScope !== "query"}
                 />
               </label>
               <label style={fieldLabelStyle}>
@@ -662,20 +744,21 @@ export default function SmartSearchAdminPage() {
                   onChange={(event) => setControlSuggestions(event.target.value)}
                   placeholder="IV catheters, saline, IV administration sets"
                   style={inputStyle}
+                  disabled={controlScope !== "query"}
                 />
               </label>
             </div>
             <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 12 }}>
               <button onClick={addPinnedFromBuilder} style={buttonStyle("#c34d50")}>Add / update pins</button>
-              <button onClick={addSynonymsFromBuilder} style={buttonStyle("#14365d")}>Add / update synonyms</button>
-              <button onClick={addSuggestionsFromBuilder} style={buttonStyle("#334155")}>Add suggestions</button>
+              <button onClick={addSynonymsFromBuilder} disabled={controlScope !== "query"} style={buttonStyle("#14365d")}>Add / update synonyms</button>
+              <button onClick={addSuggestionsFromBuilder} disabled={controlScope !== "query"} style={buttonStyle("#334155")}>Add suggestions</button>
               <button onClick={() => void loadLiveResults()} style={buttonStyle("#166534")}>{previewLoading ? "Loading..." : `Load first ${PREVIEW_PAGE_SIZE}`}</button>
-              <button onClick={openAutocompleteTest} style={outlineButtonStyle}>Test autocomplete</button>
+              <button onClick={openAutocompleteTest} disabled={controlScope !== "query"} style={outlineButtonStyle}>Test autocomplete</button>
               <button onClick={openSearchTest} style={outlineButtonStyle}>Test full search</button>
               <button onClick={clearSpecificSearchControl} style={outlineButtonStyle}>Clear fields</button>
             </div>
             <p style={{ margin: "12px 0 0", color: "#64748b", lineHeight: 1.45 }}>
-              Synonyms broaden what SmartSearch looks for. Pins are stronger: they force chosen SKUs to the top for that search term.
+              Pins are strongest: they force chosen SKUs to the top for that search term, brand page, or category page. Synonyms only apply to search terms.
             </p>
             {previewStatus && <p style={{ margin: "10px 0 0", color: previewStatus.includes("Could not") ? "#b91c1c" : "#166534", fontWeight: 800 }}>{previewStatus}</p>}
             {previewProducts.length ? (
@@ -721,6 +804,22 @@ export default function SmartSearchAdminPage() {
                 ) : null}
               </div>
             ) : null}
+            {Object.keys(savedRuntime.brandPinnedSkus || {}).length || Object.keys(savedRuntime.categoryPinnedSkus || {}).length || Object.keys(savedRuntime.categoryIdPinnedSkus || {}).length ? (
+              <div style={{ marginTop: 12 }}>
+                <div style={{ color: "#64748b", fontWeight: 900, fontSize: 12, marginBottom: 6 }}>Load saved brand/category rule</div>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  {Object.entries(savedRuntime.brandPinnedSkus || {}).slice(0, 6).map(([term, skus]) => (
+                    <button key={`brand-${term}`} onClick={() => loadSavedPinnedRule(term, skus, "brand")} style={outlineButtonStyle}>Brand: {term}</button>
+                  ))}
+                  {Object.entries(savedRuntime.categoryPinnedSkus || {}).slice(0, 6).map(([term, skus]) => (
+                    <button key={`category-${term}`} onClick={() => loadSavedPinnedRule(term, skus, "category")} style={outlineButtonStyle}>Category: {term}</button>
+                  ))}
+                  {Object.entries(savedRuntime.categoryIdPinnedSkus || {}).slice(0, 6).map(([term, skus]) => (
+                    <button key={`category-id-${term}`} onClick={() => loadSavedPinnedRule(term, skus, "category_id")} style={outlineButtonStyle}>Category ID: {term}</button>
+                  ))}
+                </div>
+              </div>
+            ) : null}
           </Panel>
 
           <Panel title="Bulk Keyword Rules" help="Paste many rules at once. Use pin, synonym, suggest, hide, or redirect. Example: synonym: cat tourniquet => combat application tourniquet, CAT">
@@ -739,6 +838,18 @@ export default function SmartSearchAdminPage() {
           <Panel title="Pinned SKUs" help="Put specific SKUs at the top for a search term. Example: term gloves, values AMDI147-9, AMDI147-8.5">
             <Rows rows={pinnedRows} setRows={setPinnedRows} leftLabel="Search term" rightLabel="SKUs, comma separated" />
             <SavedRules title="Saved pinned SKUs" map={savedRuntime.pinnedSkus} emptyText="No saved pinned SKUs yet." />
+          </Panel>
+
+          <Panel title="Brand & Category Pins" help="Put specific SKUs at the top when a customer is browsing a brand page or filtered category page. Use the live preview above to find and pin products, or edit rows here.">
+            <h3 style={subheadStyle}>Brand page pins</h3>
+            <Rows rows={brandPinnedRows} setRows={setBrandPinnedRows} leftLabel="Brand name" rightLabel="SKUs, comma separated" />
+            <SavedRules title="Saved brand pins" map={savedRuntime.brandPinnedSkus} emptyText="No saved brand pins yet." />
+            <h3 style={subheadStyle}>Category name pins</h3>
+            <Rows rows={categoryPinnedRows} setRows={setCategoryPinnedRows} leftLabel="Category name" rightLabel="SKUs, comma separated" />
+            <SavedRules title="Saved category name pins" map={savedRuntime.categoryPinnedSkus} emptyText="No saved category name pins yet." />
+            <h3 style={subheadStyle}>Category ID pins</h3>
+            <Rows rows={categoryIdPinnedRows} setRows={setCategoryIdPinnedRows} leftLabel="Category ID" rightLabel="SKUs, comma separated" />
+            <SavedRules title="Saved category ID pins" map={savedRuntime.categoryIdPinnedSkus} emptyText="No saved category ID pins yet." />
           </Panel>
 
           <Panel title="Hidden SKUs" help="Hide discontinued or unwanted SKUs from SmartSearch. Comma separated.">
@@ -790,8 +901,14 @@ export default function SmartSearchAdminPage() {
           <Panel title="Effective Rules View" help="This shows the rules SmartSearch is actually using: your saved rules plus built-in defaults.">
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
               <SavedRules title="All active pinned SKUs" map={effectiveControls.pinnedSkus} emptyText="Load controls to view active pinned SKUs." compact />
+              <SavedRules title="All active brand pins" map={effectiveControls.brandPinnedSkus} emptyText="Load controls to view active brand pins." compact />
+              <SavedRules title="All active category name pins" map={effectiveControls.categoryPinnedSkus} emptyText="Load controls to view active category name pins." compact />
+              <SavedRules title="All active category ID pins" map={effectiveControls.categoryIdPinnedSkus} emptyText="Load controls to view active category ID pins." compact />
               <SavedRules title="All active synonyms" map={effectiveControls.boostTerms} emptyText="Load controls to view active synonyms." compact />
               <SavedRules title="Built-in pinned SKUs" map={defaultControls.pinnedSkus} emptyText="No default pinned SKUs." compact />
+              <SavedRules title="Built-in brand pins" map={defaultControls.brandPinnedSkus} emptyText="No default brand pins." compact />
+              <SavedRules title="Built-in category name pins" map={defaultControls.categoryPinnedSkus} emptyText="No default category name pins." compact />
+              <SavedRules title="Built-in category ID pins" map={defaultControls.categoryIdPinnedSkus} emptyText="No default category ID pins." compact />
               <SavedRules title="Built-in synonyms" map={defaultControls.boostTerms} emptyText="No default synonyms." compact />
               <SavedPrivateCategoryRules rules={effectiveControls.privateCategoryRules} title="All active hidden/private categories" compact />
             </div>
@@ -1218,6 +1335,12 @@ const fieldLabelStyle = {
   color: "#475569",
   fontSize: 13,
   fontWeight: 900,
+};
+
+const subheadStyle = {
+  margin: "18px 0 10px",
+  color: "#14365d",
+  fontSize: 15,
 };
 
 const textareaStyle = {
