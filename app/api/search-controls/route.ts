@@ -6,6 +6,7 @@ import {
   saveRuntimeSearchOverrides,
   sanitizeSearchOverrides,
 } from "../../../lib/search-overrides";
+import { getReindexStatus } from "../../../lib/reindex-status";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -48,12 +49,14 @@ export async function GET(req: NextRequest) {
   }
 
   const runtime = await getRuntimeSearchOverrides();
+  const reindexStatus = await getReindexStatus();
 
   return NextResponse.json(
     {
       runtime,
       defaults: defaultSearchOverrides,
       effective: mergeSearchOverrides(runtime),
+      reindexStatus,
     },
     { headers: corsHeaders }
   );

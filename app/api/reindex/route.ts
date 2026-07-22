@@ -6,6 +6,7 @@ import {
   PRODUCT_COLLECTION_ALIAS,
   versionedProductCollectionName,
 } from "../../../lib/search-index";
+import { saveReindexStatus } from "../../../lib/reindex-status";
 
 const IMPORT_BATCH_SIZE = 250;
 
@@ -32,7 +33,7 @@ function parseImportResult(result: unknown) {
 }
 
 async function createProductCollection(collectionName: string) {
-  await typesenseAdmin.collections().create({
+  const schema: any = {
     name: collectionName,
     fields: [
       { name: "product_id", type: "int32" },
@@ -71,26 +72,40 @@ async function createProductCollection(collectionName: string) {
       { name: "date_modified", type: "string", optional: true }
     ],
     default_sorting_field: "popularity_score"
-  });
+  };
+
+  await typesenseAdmin.collections().create(schema);
 }
 
 async function runReindex() {
   const startedAt = Date.now();
   const targetCollection = versionedProductCollectionName();
 
-  const products = await getAllProductsForSearch();
-  if (products.length < MIN_REINDEX_RECORDS) {
-    return NextResponse.json(
-      {
-        ok: false,
-        error: "Reindex aborted before import: product count below safety threshold.",
+  await saveReindexStatus({
+    status: "running",
+    started_at: startedAt,
+    live_alias: PRODUCT_COLLECTION_ALIAS,
+    target_collection: targetCollection,
+    min_records: MIN_REINDEX_RECORDS,
+  });
+
+  try {
+    const products = await getAllProductsForSearch();
+    if (products.length < MIN_REINDEX_RECORDS) {
+      const payload = await saveReindexStatus({
+        status: "failed",
+        started_at: startedAt,
+        finished_at: Date.now(),
+        live_alias: PRODUCT_COLLECTION_ALIAS,
+        target_collection: targetCollection,
         total_records: products.length,
         min_records: MIN_REINDEX_RECORDS,
-        live_alias: PRODUCT_COLLECTION_ALIAS,
-      },
-      { status: 500 }
-    );
-  }
+        error: "Reindex aborted before import: product count below safety threshold.",
+        ms: Date.now() - startedAt,
+      });
+
+      return NextResponse.json(payload, { status: 500 });
+    }
 
   await createProductCollection(targetCollection);
 
@@ -107,36 +122,38 @@ async function runReindex() {
 
   const failed = importRows.filter((row: any) => row && row.success === false);
   if (failed.length) {
-    return NextResponse.json(
-      {
-        ok: false,
-        error: "Reindex aborted before alias swap: one or more imports failed.",
-        target_collection: targetCollection,
-        live_alias: PRODUCT_COLLECTION_ALIAS,
-        total_records: products.length,
-        failed_count: failed.length,
-        failed: failed.slice(0, 10),
-        ms: Date.now() - startedAt,
-      },
-      { status: 500 }
-    );
+    const payload = await saveReindexStatus({
+      status: "failed",
+      started_at: startedAt,
+      finished_at: Date.now(),
+      live_alias: PRODUCT_COLLECTION_ALIAS,
+      target_collection: targetCollection,
+      total_records: products.length,
+      failed_count: failed.length,
+      min_records: MIN_REINDEX_RECORDS,
+      error: "Reindex aborted before alias swap: one or more imports failed.",
+      ms: Date.now() - startedAt,
+    });
+
+    return NextResponse.json({ ...payload, failed: failed.slice(0, 10) }, { status: 500 });
   }
 
   const collection: any = await typesenseAdmin.collections(targetCollection).retrieve();
   if (Number(collection.num_documents || 0) < MIN_REINDEX_RECORDS) {
-    return NextResponse.json(
-      {
-        ok: false,
-        error: "Reindex aborted before alias swap: indexed document count below safety threshold.",
-        target_collection: targetCollection,
-        live_alias: PRODUCT_COLLECTION_ALIAS,
-        total_records: products.length,
-        indexed_records: collection.num_documents,
-        min_records: MIN_REINDEX_RECORDS,
-        ms: Date.now() - startedAt,
-      },
-      { status: 500 }
-    );
+    const payload = await saveReindexStatus({
+      status: "failed",
+      started_at: startedAt,
+      finished_at: Date.now(),
+      live_alias: PRODUCT_COLLECTION_ALIAS,
+      target_collection: targetCollection,
+      total_records: products.length,
+      indexed_records: Number(collection.num_documents || 0),
+      min_records: MIN_REINDEX_RECORDS,
+      error: "Reindex aborted before alias swap: indexed document count below safety threshold.",
+      ms: Date.now() - startedAt,
+    });
+
+    return NextResponse.json(payload, { status: 500 });
   }
 
   const smokeSearch: any = await typesenseAdmin
@@ -150,17 +167,20 @@ async function runReindex() {
     });
 
   if (Number(smokeSearch.found || 0) <= 0) {
-    return NextResponse.json(
-      {
-        ok: false,
-        error: "Reindex aborted before alias swap: smoke search returned no results.",
-        target_collection: targetCollection,
-        live_alias: PRODUCT_COLLECTION_ALIAS,
-        total_records: products.length,
-        ms: Date.now() - startedAt,
-      },
-      { status: 500 }
-    );
+    const payload = await saveReindexStatus({
+      status: "failed",
+      started_at: startedAt,
+      finished_at: Date.now(),
+      live_alias: PRODUCT_COLLECTION_ALIAS,
+      target_collection: targetCollection,
+      total_records: products.length,
+      indexed_records: Number(collection.num_documents || 0),
+      min_records: MIN_REINDEX_RECORDS,
+      error: "Reindex aborted before alias swap: smoke search returned no results.",
+      ms: Date.now() - startedAt,
+    });
+
+    return NextResponse.json(payload, { status: 500 });
   }
 
   const previousAlias = await typesenseAdmin
@@ -172,16 +192,39 @@ async function runReindex() {
     collection_name: targetCollection,
   });
 
-  return NextResponse.json({
-    ok: true,
+  const payload = await saveReindexStatus({
+    status: "success",
+    started_at: startedAt,
+    finished_at: Date.now(),
     live_alias: PRODUCT_COLLECTION_ALIAS,
     previous_collection: previousAlias?.collection_name || "",
-    collection: targetCollection,
+    target_collection: targetCollection,
     total_records: products.length,
-    indexed_records: collection.num_documents,
+    indexed_records: Number(collection.num_documents || 0),
     failed_count: 0,
-    ms: Date.now() - startedAt
+    min_records: MIN_REINDEX_RECORDS,
+    alias_swapped: true,
+    ms: Date.now() - startedAt,
   });
+
+  return NextResponse.json({
+    ...payload,
+    collection: targetCollection,
+  });
+  } catch (error) {
+    const payload = await saveReindexStatus({
+      status: "failed",
+      started_at: startedAt,
+      finished_at: Date.now(),
+      live_alias: PRODUCT_COLLECTION_ALIAS,
+      target_collection: targetCollection,
+      min_records: MIN_REINDEX_RECORDS,
+      error: error instanceof Error ? error.message : "Unexpected reindex error.",
+      ms: Date.now() - startedAt,
+    });
+
+    return NextResponse.json(payload, { status: 500 });
+  }
 }
 
 export async function GET(req: NextRequest) {

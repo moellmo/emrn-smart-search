@@ -74,6 +74,23 @@ type AnalyticsSummary = {
   queryFunnel?: AnalyticsFunnelRow[];
 };
 
+type ReindexStatus = {
+  ok?: boolean;
+  status?: "running" | "success" | "failed";
+  started_at?: number;
+  finished_at?: number;
+  live_alias?: string;
+  target_collection?: string;
+  previous_collection?: string;
+  total_records?: number;
+  indexed_records?: number;
+  failed_count?: number;
+  min_records?: number;
+  alias_swapped?: boolean;
+  error?: string;
+  ms?: number;
+};
+
 const PREVIEW_PAGE_SIZE = 48;
 
 const blankControls: SearchOverrides = {
@@ -130,6 +147,22 @@ function redirectsToBulk(rows: Array<{ terms: string; url: string }>) {
     .map((row) => `redirect: ${row.terms.trim()} => ${row.url.trim()}`);
 }
 
+function formatDateTime(value?: number) {
+  if (!value) return "Never";
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(new Date(value));
+}
+
+function formatDuration(ms?: number) {
+  if (!ms) return "Not finished";
+  if (ms < 1000) return `${ms} ms`;
+  const seconds = Math.round(ms / 1000);
+  if (seconds < 60) return `${seconds} sec`;
+  return `${Math.floor(seconds / 60)} min ${seconds % 60} sec`;
+}
+
 export default function SmartSearchAdminPage() {
   const [password, setPassword] = useState("");
   const [status, setStatus] = useState("");
@@ -147,6 +180,7 @@ export default function SmartSearchAdminPage() {
   const [bulkRules, setBulkRules] = useState("");
   const [twoWaySynonyms, setTwoWaySynonyms] = useState(true);
   const [analytics, setAnalytics] = useState<AnalyticsSummary | null>(null);
+  const [reindexStatus, setReindexStatus] = useState<ReindexStatus | null>(null);
   const [savedRuntime, setSavedRuntime] = useState<SearchOverrides>(blankControls);
   const [effectiveControls, setEffectiveControls] = useState<SearchOverrides>(blankControls);
   const [defaultControls, setDefaultControls] = useState<SearchOverrides>(blankControls);
@@ -210,6 +244,7 @@ export default function SmartSearchAdminPage() {
     setSavedRuntime(controls);
     setEffectiveControls(data.effective || controls);
     setDefaultControls(data.defaults || blankControls);
+    setReindexStatus(data.reindexStatus || null);
 
     setRedirects(
       (controls.redirects || []).map((redirect) => ({
@@ -605,10 +640,12 @@ export default function SmartSearchAdminPage() {
     const data = await res.json();
 
     if (!res.ok) {
+      setReindexStatus(data || null);
       setStatus(data.error || "Could not run reindex.");
       return;
     }
 
+    setReindexStatus(data || null);
     setStatus(`Reindex complete: ${data.total_records || 0} records, ${data.failed_count || 0} failed.`);
   }
 
@@ -651,6 +688,46 @@ export default function SmartSearchAdminPage() {
               {status}
             </p>
           )}
+
+          <div style={{ marginTop: 18, border: "1px solid #e5e7eb", borderRadius: 16, background: "#ffffff", padding: 16 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", marginBottom: 12 }}>
+              <div>
+                <div style={{ fontSize: 12, color: "#64748b", fontWeight: 900, textTransform: "uppercase", letterSpacing: ".08em" }}>
+                  Nightly Reindex
+                </div>
+                <h2 style={{ margin: "4px 0 0", fontSize: 20 }}>Last run status</h2>
+              </div>
+              <span
+                style={{
+                  borderRadius: 999,
+                  padding: "8px 12px",
+                  fontWeight: 900,
+                  color: reindexStatus?.status === "success" ? "#166534" : reindexStatus?.status === "running" ? "#92400e" : "#b91c1c",
+                  background: reindexStatus?.status === "success" ? "#dcfce7" : reindexStatus?.status === "running" ? "#fef3c7" : "#fee2e2",
+                }}
+              >
+                {reindexStatus?.status ? reindexStatus.status.toUpperCase() : "NOT LOADED"}
+              </span>
+            </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10 }}>
+              <ReindexStat label="Finished" value={formatDateTime(reindexStatus?.finished_at)} />
+              <ReindexStat label="Products" value={`${(reindexStatus?.indexed_records || reindexStatus?.total_records || 0).toLocaleString()}`} />
+              <ReindexStat label="Failed imports" value={`${reindexStatus?.failed_count || 0}`} />
+              <ReindexStat label="Duration" value={formatDuration(reindexStatus?.ms)} />
+            </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 10 }}>
+              <ReindexStat label="Live alias" value={reindexStatus?.live_alias || "emrn_products_live"} />
+              <ReindexStat label="Current target" value={reindexStatus?.target_collection || "No run recorded yet"} />
+            </div>
+
+            {reindexStatus?.error && (
+              <div style={{ marginTop: 10, border: "1px solid #fecaca", borderRadius: 12, background: "#fff1f2", color: "#991b1b", padding: 12, fontWeight: 800 }}>
+                {reindexStatus.error}
+              </div>
+            )}
+          </div>
         </div>
 
         {analytics && (
@@ -1302,6 +1379,15 @@ function RedirectRows({
       ))}
 
       <button onClick={() => setRows([...rows, { terms: "", url: "" }])} style={outlineButtonStyle}>+ Add redirect</button>
+    </div>
+  );
+}
+
+function ReindexStat({ label, value }: { label: string; value: string }) {
+  return (
+    <div style={{ border: "1px solid #e5e7eb", borderRadius: 12, background: "#f8fafc", padding: 12, minWidth: 0 }}>
+      <div style={{ color: "#64748b", fontSize: 12, fontWeight: 900, textTransform: "uppercase", letterSpacing: ".04em" }}>{label}</div>
+      <div style={{ marginTop: 5, color: "#111827", fontSize: 15, fontWeight: 900, overflowWrap: "anywhere" }}>{value}</div>
     </div>
   );
 }
