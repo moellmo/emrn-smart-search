@@ -1,12 +1,13 @@
 import { NextResponse } from "next/server";
 import { typesenseSearch } from "../../../lib/typesense";
 import { getEffectiveSearchOverrides, getHiddenCategoryRules } from "../../../lib/search-overrides";
+import { PRODUCT_COLLECTION_ALIAS } from "../../../lib/search-index";
 import { absoluteStoreUrl } from "../../../lib/store-url";
 
 const STORE_HASH = process.env.BIGCOMMERCE_STORE_HASH!;
 const ACCESS_TOKEN = process.env.BIGCOMMERCE_ACCESS_TOKEN!;
 const API_BASE = `https://api.bigcommerce.com/stores/${STORE_HASH}/v3`;
-const COLLECTION_NAME = "emrn_products";
+const COLLECTION_NAME = PRODUCT_COLLECTION_ALIAS;
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",

@@ -4,9 +4,10 @@ import { buildSmartSearchQuery } from "../../../lib/smart-search-translator";
 import { normalizeSearchText } from "../../../lib/search-language";
 import { applyBrandQueryRanking, applyHiddenSkuFilter, applyIntentRanking, applyPinnedSkuListRanking, applyPrivateCategoryFilter, explainResult } from "../../../lib/search-ranking";
 import { getEffectiveSearchOverrides, getPinnedSkusForContext } from "../../../lib/search-overrides";
+import { PRODUCT_COLLECTION_ALIAS } from "../../../lib/search-index";
 import { STORE_URL, absoluteStoreUrl } from "../../../lib/store-url";
 
-const COLLECTION_NAME = "emrn_products";
+const COLLECTION_NAME = PRODUCT_COLLECTION_ALIAS;
 const ANALYTICS_COLLECTION_NAME = "emrn_search_analytics";
 const STORE_HASH = process.env.BIGCOMMERCE_STORE_HASH!;
 const ACCESS_TOKEN = process.env.BIGCOMMERCE_ACCESS_TOKEN!;

@@ -1,9 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { typesenseAdmin } from "../../../lib/typesense";
 import { getAllProductsForSearch } from "../../../lib/bigcommerce";
+import {
+  MIN_REINDEX_RECORDS,
+  PRODUCT_COLLECTION_ALIAS,
+  versionedProductCollectionName,
+} from "../../../lib/search-index";
 
-const COLLECTION_NAME = "emrn_products";
 const IMPORT_BATCH_SIZE = 250;
+
+export const maxDuration = 300;
 
 function parseImportResult(result: unknown) {
   if (Array.isArray(result)) return result;
@@ -25,16 +31,9 @@ function parseImportResult(result: unknown) {
     });
 }
 
-async function ensureCollection() {
-  try {
-    await typesenseAdmin.collections(COLLECTION_NAME).retrieve();
-    return;
-  } catch {
-    // Create the collection below when it does not exist.
-  }
-
+async function createProductCollection(collectionName: string) {
   await typesenseAdmin.collections().create({
-    name: COLLECTION_NAME,
+    name: collectionName,
     fields: [
       { name: "product_id", type: "int32" },
       { name: "variant_id", type: "int32", facet: true, optional: true },
@@ -77,16 +76,29 @@ async function ensureCollection() {
 
 async function runReindex() {
   const startedAt = Date.now();
-
-  await ensureCollection();
+  const targetCollection = versionedProductCollectionName();
 
   const products = await getAllProductsForSearch();
+  if (products.length < MIN_REINDEX_RECORDS) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error: "Reindex aborted before import: product count below safety threshold.",
+        total_records: products.length,
+        min_records: MIN_REINDEX_RECORDS,
+        live_alias: PRODUCT_COLLECTION_ALIAS,
+      },
+      { status: 500 }
+    );
+  }
+
+  await createProductCollection(targetCollection);
 
   const importRows: unknown[] = [];
   for (let index = 0; index < products.length; index += IMPORT_BATCH_SIZE) {
     const batch = products.slice(index, index + IMPORT_BATCH_SIZE);
     const result = await typesenseAdmin
-      .collections(COLLECTION_NAME)
+      .collections(targetCollection)
       .documents()
       .import(batch, { action: "upsert" });
 
@@ -94,13 +106,80 @@ async function runReindex() {
   }
 
   const failed = importRows.filter((row: any) => row && row.success === false);
+  if (failed.length) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error: "Reindex aborted before alias swap: one or more imports failed.",
+        target_collection: targetCollection,
+        live_alias: PRODUCT_COLLECTION_ALIAS,
+        total_records: products.length,
+        failed_count: failed.length,
+        failed: failed.slice(0, 10),
+        ms: Date.now() - startedAt,
+      },
+      { status: 500 }
+    );
+  }
+
+  const collection: any = await typesenseAdmin.collections(targetCollection).retrieve();
+  if (Number(collection.num_documents || 0) < MIN_REINDEX_RECORDS) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error: "Reindex aborted before alias swap: indexed document count below safety threshold.",
+        target_collection: targetCollection,
+        live_alias: PRODUCT_COLLECTION_ALIAS,
+        total_records: products.length,
+        indexed_records: collection.num_documents,
+        min_records: MIN_REINDEX_RECORDS,
+        ms: Date.now() - startedAt,
+      },
+      { status: 500 }
+    );
+  }
+
+  const smokeSearch: any = await typesenseAdmin
+    .collections(targetCollection)
+    .documents()
+    .search({
+      q: "bandage",
+      query_by: "sku,all_skus,name,parent_name,brand,categories,search_text",
+      filter_by: "is_visible:=true",
+      per_page: 1,
+    });
+
+  if (Number(smokeSearch.found || 0) <= 0) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error: "Reindex aborted before alias swap: smoke search returned no results.",
+        target_collection: targetCollection,
+        live_alias: PRODUCT_COLLECTION_ALIAS,
+        total_records: products.length,
+        ms: Date.now() - startedAt,
+      },
+      { status: 500 }
+    );
+  }
+
+  const previousAlias = await typesenseAdmin
+    .aliases(PRODUCT_COLLECTION_ALIAS)
+    .retrieve()
+    .catch(() => null);
+
+  await typesenseAdmin.aliases().upsert(PRODUCT_COLLECTION_ALIAS, {
+    collection_name: targetCollection,
+  });
 
   return NextResponse.json({
     ok: true,
-    collection: COLLECTION_NAME,
+    live_alias: PRODUCT_COLLECTION_ALIAS,
+    previous_collection: previousAlias?.collection_name || "",
+    collection: targetCollection,
     total_records: products.length,
-    failed_count: failed.length,
-    failed: failed.slice(0, 10),
+    indexed_records: collection.num_documents,
+    failed_count: 0,
     ms: Date.now() - startedAt
   });
 }

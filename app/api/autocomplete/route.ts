@@ -4,9 +4,10 @@ import { buildSmartSearchQuery } from "../../../lib/smart-search-translator";
 import { normalizeSearchText } from "../../../lib/search-language";
 import { applyBrandQueryRanking, applyHiddenSkuFilter, applyIntentRanking, applyPinnedSkuRanking, applyPrivateCategoryFilter } from "../../../lib/search-ranking";
 import { getEffectiveSearchOverrides, getPinnedSkusForQuery } from "../../../lib/search-overrides";
+import { PRODUCT_COLLECTION_ALIAS } from "../../../lib/search-index";
 import { STORE_URL, absoluteStoreUrl } from "../../../lib/store-url";
 
-const COLLECTION_NAME = "emrn_products";
+const COLLECTION_NAME = PRODUCT_COLLECTION_ALIAS;
 const AED_CATEGORY_ID = 160;
 
 const corsHeaders = {
