@@ -57,7 +57,7 @@ export const defaultSearchOverrides: SearchOverrides = {
   categoryPinnedSkus: {},
   categoryIdPinnedSkus: {},
 
-  hiddenSkus: ["X-REDO-RETURN-PACKAGE-PROTECTION"],
+  hiddenSkus: ["X-REDO-RETURN-PACKAGE-PROTECTION", "x-redo-return-package"],
   privateCategoryRules: [],
 
   boostTerms: {
