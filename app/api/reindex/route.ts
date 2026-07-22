@@ -25,11 +25,12 @@ function parseImportResult(result: unknown) {
     });
 }
 
-async function recreateCollection() {
+async function ensureCollection() {
   try {
-    await typesenseAdmin.collections(COLLECTION_NAME).delete();
+    await typesenseAdmin.collections(COLLECTION_NAME).retrieve();
+    return;
   } catch {
-    // Collection may not exist yet.
+    // Create the collection below when it does not exist.
   }
 
   await typesenseAdmin.collections().create({
@@ -77,7 +78,7 @@ async function recreateCollection() {
 async function runReindex() {
   const startedAt = Date.now();
 
-  await recreateCollection();
+  await ensureCollection();
 
   const products = await getAllProductsForSearch();
 

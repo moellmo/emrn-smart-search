@@ -40,7 +40,7 @@ const RAW_CATEGORY_CACHE_MS = 1000 * 60 * 5;
 let rawCategoryCache: {
   expiresAt: number;
   categories: BCCategory[];
-  catalogCounts: Map<string, number>;
+  catalogCounts: Map<string, number> | null;
 } | null = null;
 
 async function bcFetch<T>(path: string): Promise<T> {
@@ -82,7 +82,7 @@ async function fetchCatalogCategoryCounts() {
     return counts;
   } catch (err) {
     console.error("[EMRN SmartSearch] category catalog counts unavailable", err);
-    return new Map<string, number>();
+    return null;
   }
 }
 
@@ -105,13 +105,15 @@ async function getRawCategoryData() {
   if (rawCategoryCache && rawCategoryCache.expiresAt > Date.now()) return rawCategoryCache;
 
   const [categories, catalogCounts] = await Promise.all([fetchAllCategories(), fetchCatalogCategoryCounts()]);
-  rawCategoryCache = {
-    categories,
-    catalogCounts,
-    expiresAt: Date.now() + RAW_CATEGORY_CACHE_MS,
-  };
+  if (catalogCounts && catalogCounts.size > 0) {
+    rawCategoryCache = {
+      categories,
+      catalogCounts,
+      expiresAt: Date.now() + RAW_CATEGORY_CACHE_MS,
+    };
+  }
 
-  return rawCategoryCache;
+  return { categories, catalogCounts };
 }
 
 export async function OPTIONS() {
@@ -134,7 +136,7 @@ export async function GET() {
       name: cat.name,
       url: absoluteStoreUrl(cat.custom_url?.url),
       image: cat.image_url ? absoluteStoreUrl(cat.image_url) : "",
-      product_count: catalogCounts.get(String(cat.name || "").toLowerCase()) || Number(cat.product_count || 0),
+      product_count: catalogCounts?.get(String(cat.name || "").toLowerCase()) || Number(cat.product_count || 0),
     }));
 
   return NextResponse.json({ categories: flat }, { headers: corsHeaders });
