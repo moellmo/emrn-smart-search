@@ -317,13 +317,23 @@ export async function findSearchRedirectAsync(query: string) {
 export function getPinnedSkusForQuery(query: string, controls = defaultSearchOverrides) {
   const normalized = normalizeOverrideQuery(query);
   const skus = new Set<string>();
+  const matches: Array<{ term: string; values: string[]; exact: boolean }> = [];
 
   for (const [term, values] of Object.entries(controls.pinnedSkus)) {
     const normalizedTerm = normalizeOverrideQuery(term);
     if (matchesOverrideTerm(normalized, normalizedTerm)) {
-      values.forEach((sku) => sku && skus.add(sku));
+      matches.push({ term: normalizedTerm, values, exact: normalized === normalizedTerm });
     }
   }
+
+  matches
+    .sort((a, b) => {
+      if (a.exact !== b.exact) return a.exact ? -1 : 1;
+      return b.term.length - a.term.length;
+    })
+    .forEach((match) => {
+      match.values.forEach((sku) => sku && skus.add(sku));
+    });
 
   return Array.from(skus);
 }
