@@ -192,6 +192,24 @@
     `;
   }
 
+  function productKey(product) {
+    return String(product?.id || `${product?.product_id || ""}:${product?.variant_id || ""}:${product?.sku || ""}`);
+  }
+
+  function mergeProducts(existing, incoming) {
+    const seen = new Set();
+    const merged = [];
+
+    [...(existing || []), ...(incoming || [])].forEach((product) => {
+      const key = productKey(product);
+      if (!key || seen.has(key)) return;
+      seen.add(key);
+      merged.push(product);
+    });
+
+    return merged;
+  }
+
   function render() {
     const root = document.querySelector("#emrn-smart-category-root");
     if (!root || !state.currentCategory) return;
@@ -438,7 +456,8 @@
     state.data = data;
     state.found = data.found || 0;
     state.page = page;
-    state.products = append ? state.products.concat((data.hits || []).map((hit) => hit.document)) : (data.hits || []).map((hit) => hit.document);
+    const products = (data.hits || []).map((hit) => hit.document);
+    state.products = append ? mergeProducts(state.products, products) : mergeProducts([], products);
     state.loading = false;
     render();
   }

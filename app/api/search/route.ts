@@ -457,7 +457,7 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
 
   const q = searchParams.get("q") || "*";
-  const page = Number(searchParams.get("page") || 1);
+  const page = Math.max(1, Math.floor(Number(searchParams.get("page") || 1)) || 1);
   const perPage = Number(searchParams.get("per_page") || 24);
   const brand = searchParams.get("brand");
   const category = searchParams.get("category");
@@ -471,8 +471,9 @@ export async function GET(req: NextRequest) {
   const sort = searchParams.get("sort") || "popularity";
   const customerId = searchParams.get("customer_id") || "";
   const requestedPerPage = Math.min(Math.max(perPage, 1), 48);
-  const primaryFetchSize = page === 1 ? Math.min(requestedPerPage * 8, 160) : Math.min(requestedPerPage * 3, 96);
-  const supplementalFetchSize = page === 1 ? Math.min(requestedPerPage * 4, 96) : Math.min(requestedPerPage * 2, 60);
+  const pageEnd = page * requestedPerPage;
+  const primaryFetchSize = Math.min(Math.max(pageEnd * 4, requestedPerPage * 8), 250);
+  const supplementalFetchSize = Math.min(Math.max(pageEnd * 2, requestedPerPage * 4), 160);
   const facetLimit = page === 1 ? 600 : 160;
 
   const controls = await getEffectiveSearchOverrides();
@@ -520,7 +521,7 @@ export async function GET(req: NextRequest) {
       sort_by: normalizeSort(sort),
       per_page: primaryFetchSize,
       limit_hits: SEARCH_HIT_LIMIT,
-      page,
+      page: 1,
       num_typos: 2,
       typo_tokens_threshold: 1,
       prefix: true,
@@ -531,7 +532,7 @@ export async function GET(req: NextRequest) {
     const supplementalBase = filters.join(" && ");
     const pinnedSkus = getPinnedSkusForContext({ query: q, brand, category, categoryId, categoryIds }, controls);
 
-    for (const sku of pinnedSkus.slice(0, 24)) {
+    for (const sku of pinnedSkus.slice(0, pageEnd)) {
       supplementalSearches.push({
         kind: "pinned",
         search: typesenseSearch
@@ -570,7 +571,7 @@ export async function GET(req: NextRequest) {
               sort_by: normalizeSort(sort),
               per_page: supplementalFetchSize,
               limit_hits: SEARCH_HIT_LIMIT,
-              page,
+              page: 1,
             }),
         }
       );
@@ -592,7 +593,7 @@ export async function GET(req: NextRequest) {
               sort_by: normalizeSort(sort),
               per_page: supplementalFetchSize,
               limit_hits: SEARCH_HIT_LIMIT,
-              page,
+              page: 1,
             }),
         }
       );
@@ -616,7 +617,7 @@ export async function GET(req: NextRequest) {
               sort_by: normalizeSort(sort),
               per_page: supplementalFetchSize,
               limit_hits: SEARCH_HIT_LIMIT,
-              page,
+              page: 1,
               num_typos: 1,
               typo_tokens_threshold: 1,
               prefix: true,
@@ -642,7 +643,7 @@ export async function GET(req: NextRequest) {
               sort_by: normalizeSort(sort),
               per_page: supplementalFetchSize,
               limit_hits: SEARCH_HIT_LIMIT,
-              page,
+              page: 1,
               num_typos: 1,
               typo_tokens_threshold: 1,
               prefix: true,
@@ -693,7 +694,8 @@ export async function GET(req: NextRequest) {
       );
     }
     addMissingSingleValueFacetBuckets(results);
-    results.hits = filteredHits.slice(0, requestedPerPage).map((hit: any) => ({
+    const pageStart = (page - 1) * requestedPerPage;
+    results.hits = filteredHits.slice(pageStart, pageStart + requestedPerPage).map((hit: any) => ({
       ...hit,
       document: {
         ...hit.document,
