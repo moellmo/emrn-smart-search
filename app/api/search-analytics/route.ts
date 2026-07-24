@@ -216,6 +216,21 @@ function analyticsDocument(row: AnalyticsHit) {
   return row.document || {};
 }
 
+function analyticsDateFilter(req: NextRequest) {
+  const range = String(req.nextUrl.searchParams.get("range") || "all").trim().toLowerCase();
+  if (range === "all") return "";
+
+  const days = range === "7d" ? 7 : range === "30d" ? 30 : range === "90d" ? 90 : 0;
+  if (!days) return "";
+
+  const now = Date.now();
+  return `created_at:>=${now - days * 24 * 60 * 60 * 1000} && created_at:<=${now}`;
+}
+
+function analyticsFilter(req: NextRequest, extra: string[] = []) {
+  return [analyticsDateFilter(req), ...extra].filter(Boolean).join(" && ");
+}
+
 export async function GET(req: NextRequest) {
   if (!isAuthorized(req)) {
     return NextResponse.json({ error: "Invalid admin password." }, { status: 401, headers: corsHeaders(req) });
@@ -239,6 +254,7 @@ export async function GET(req: NextRequest) {
     const filterParts = [];
     if (event) filterParts.push(`event:=${JSON.stringify(event)}`);
     if (query) filterParts.push(`query:=${JSON.stringify(query)}`);
+    const filterBy = analyticsFilter(req, filterParts);
 
     try {
       const results = (await typesenseAdmin.collections(COLLECTION_NAME).documents().search({
@@ -247,7 +263,7 @@ export async function GET(req: NextRequest) {
         sort_by: "created_at:desc",
         per_page: perPage,
         page,
-        ...(filterParts.length ? { filter_by: filterParts.join(" && ") } : {}),
+        ...(filterBy ? { filter_by: filterBy } : {}),
       })) as AnalyticsSearchResult;
 
       const rows = (results.hits || []).map(analyticsDocument);
@@ -282,6 +298,7 @@ export async function GET(req: NextRequest) {
         sort_by: "created_at:desc",
         per_page: pageSize,
         page,
+        ...(analyticsDateFilter(req) ? { filter_by: analyticsDateFilter(req) } : {}),
       })) as AnalyticsSearchResult;
 
       total = Math.max(total, Number(results.found || 0));

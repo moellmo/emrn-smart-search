@@ -52,9 +52,37 @@ type AnalyticsSummary = {
 };
 
 const EVENT_PAGE_SIZE = 100;
+const ANALYTICS_RANGE_KEY = "emrn-smartsearch-analytics-range";
+const ANALYTICS_PASSWORD_KEY = "emrn-smartsearch-admin-password";
+const RANGE_OPTIONS = [
+  { value: "7d", label: "Last 7 days" },
+  { value: "30d", label: "Last 30 days" },
+  { value: "90d", label: "Last 90 days" },
+  { value: "all", label: "All time" },
+];
 
 export default function SmartSearchAnalyticsPage() {
-  const [password, setPassword] = useState("");
+  const [password, setPassword] = useState(() => {
+    try {
+      return typeof window === "undefined" ? "" : window.localStorage.getItem(ANALYTICS_PASSWORD_KEY) || "";
+    } catch {
+      return "";
+    }
+  });
+  const [rememberPassword, setRememberPassword] = useState(() => {
+    try {
+      return typeof window !== "undefined" && Boolean(window.localStorage.getItem(ANALYTICS_PASSWORD_KEY));
+    } catch {
+      return false;
+    }
+  });
+  const [range, setRange] = useState(() => {
+    try {
+      return typeof window === "undefined" ? "30d" : window.localStorage.getItem(ANALYTICS_RANGE_KEY) || "30d";
+    } catch {
+      return "30d";
+    }
+  });
   const [status, setStatus] = useState("");
   const [summary, setSummary] = useState<AnalyticsSummary | null>(null);
   const [events, setEvents] = useState<EventRow[]>([]);
@@ -69,12 +97,34 @@ export default function SmartSearchAnalyticsPage() {
   }, [summary]);
   const totalSearchEvents = (eventCounts.get("search") || 0) + (eventCounts.get("results_view") || 0) + (eventCounts.get("server_search") || 0);
 
+  function rangeParams() {
+    return range === "all" ? {} : { range };
+  }
+
+  function savePasswordPreference(value: string, remember: boolean) {
+    setPassword(value);
+    setRememberPassword(remember);
+    try {
+      if (remember && value) window.localStorage.setItem(ANALYTICS_PASSWORD_KEY, value);
+      else window.localStorage.removeItem(ANALYTICS_PASSWORD_KEY);
+    } catch {
+      // Storage may be disabled by the browser.
+    }
+  }
+
+  function changeRange(value: string) {
+    setRange(value);
+    try {
+      window.localStorage.setItem(ANALYTICS_RANGE_KEY, value);
+    } catch {
+      // Storage may be disabled by the browser.
+    }
+  }
+
   async function loadSummary() {
     setStatus("Loading analytics...");
     try {
-      const res = await fetch("/api/search-analytics", {
-        headers: { "x-smartsearch-admin-password": password },
-      });
+      const res = await fetchAnalytics("/api/search-analytics");
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         setStatus(data.error || "Could not load analytics.");
@@ -88,6 +138,16 @@ export default function SmartSearchAnalyticsPage() {
     }
   }
 
+  async function fetchAnalytics(path: string) {
+    const separator = path.includes("?") ? "&" : "?";
+    const params = new URLSearchParams({ ...rangeParams() });
+    const url = params.toString() ? `${path}${separator}${params.toString()}` : path;
+    return fetch(url, {
+      cache: "no-store",
+      headers: { "x-smartsearch-admin-password": password },
+    });
+  }
+
   async function loadEvents(page: number, append: boolean) {
     setEventsLoading(true);
     try {
@@ -95,6 +155,7 @@ export default function SmartSearchAnalyticsPage() {
         mode: "events",
         page: String(page),
         per_page: String(EVENT_PAGE_SIZE),
+        ...rangeParams(),
       });
       const res = await fetch(`/api/search-analytics?${params.toString()}`, {
         headers: { "x-smartsearch-admin-password": password },
@@ -138,6 +199,48 @@ export default function SmartSearchAnalyticsPage() {
     }
   }
 
+  async function exportAllEvents(format: "csv" | "excel") {
+    setStatus(`Preparing filtered ${format === "csv" ? "CSV" : "Excel"} export...`);
+    try {
+      const allRows: EventRow[] = [];
+      let page = 1;
+      let hasMore = true;
+      while (hasMore && page <= 100) {
+        const params = new URLSearchParams({ mode: "events", page: String(page), per_page: "250", ...rangeParams() });
+        const res = await fetch(`/api/search-analytics?${params.toString()}`, {
+          cache: "no-store",
+          headers: { "x-smartsearch-admin-password": password },
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || "Could not export analytics.");
+        allRows.push(...(data.rows || []));
+        hasMore = Boolean(data.hasMore);
+        page += 1;
+      }
+
+      const rows = allRows.map((row) => ({
+        created_at: formatDate(row.created_at),
+        event: row.event || "",
+        query: row.query || "",
+        sku: row.sku || "",
+        product_name: row.product_name || "",
+        product_id: row.product_id || "",
+        customer_id: row.customer_id || "",
+        page_type: row.page_type || "",
+        url: row.url || "",
+      }));
+      if (!rows.length) {
+        setStatus("No events found for this date range.");
+        return;
+      }
+      if (format === "csv") downloadCsv(`smartsearch-events-${range}`, rows);
+      else downloadExcel(`smartsearch-events-${range}`, rows);
+      setStatus(`Exported ${rows.length} filtered event${rows.length === 1 ? "" : "s"}.`);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Could not export analytics.");
+    }
+  }
+
   return (
     <main style={{ fontFamily: "Inter, Arial, sans-serif", background: "#eef3f8", color: "#111827", minHeight: "100vh", padding: 24 }}>
       <section style={{ maxWidth: 1320, margin: "0 auto" }}>
@@ -153,25 +256,42 @@ export default function SmartSearchAnalyticsPage() {
             <input
               type="password"
               value={password}
-              onChange={(event) => setPassword(event.target.value)}
+              onChange={(event) => savePasswordPreference(event.target.value, rememberPassword)}
               placeholder="Admin password"
               style={{ ...inputStyle, flex: "1 1 360px", height: 48, borderRadius: 999, padding: "0 16px" }}
             />
+            <label style={{ ...outlineButtonStyle, height: 48, gap: 8, cursor: "pointer" }}>
+              <input
+                type="checkbox"
+                checked={rememberPassword}
+                onChange={(event) => savePasswordPreference(password, event.target.checked)}
+              />
+              Remember on this device
+            </label>
+            <select value={range} onChange={(event) => changeRange(event.target.value)} style={{ ...inputStyle, height: 48, borderRadius: 999, padding: "0 16px", fontWeight: 800 }}>
+              {RANGE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+            </select>
             <button onClick={loadSummary} style={buttonStyle("#14365d")}>Load analytics</button>
+            <button onClick={() => void exportAllEvents("csv")} style={outlineButtonStyle}>Export filtered CSV</button>
+            <button onClick={() => void exportAllEvents("excel")} style={outlineButtonStyle}>Export filtered Excel</button>
             <button onClick={sendTestEvent} style={outlineButtonStyle}>Test analytics</button>
             <a href="/smartsearch-admin" style={linkButtonStyle}>Search controls</a>
           </div>
+          <p style={{ margin: "10px 0 0", color: "#64748b", fontSize: 12 }}>
+            Date range applies to the dashboard, event table, and exports. Saving the password stores it in this browser on this device.
+          </p>
           {status && <p style={{ margin: "12px 0 0", color: /loaded|saved|test/i.test(status) ? "#166534" : "#b91c1c", fontWeight: 800 }}>{status}</p>}
         </div>
 
         {summary ? (
           <>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 14, marginBottom: 18 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(6, minmax(0, 1fr))", gap: 14, marginBottom: 18 }}>
               <Stat label="Stored events" value={summary.total || 0} />
               <Stat label="Loaded rows" value={summary.loadedRows || 0} />
               <Stat label="Searches" value={totalSearchEvents} />
               <Stat label="Product clicks" value={eventCounts.get("product_click") || 0} />
               <Stat label="Cart adds" value={eventCounts.get("add_to_cart") || 0} />
+              <Stat label="Quotes / purchases" value={`${eventCounts.get("add_to_quote") || 0} / ${eventCounts.get("purchase") || 0}`} />
             </div>
 
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 18 }}>
@@ -180,9 +300,11 @@ export default function SmartSearchAnalyticsPage() {
               <MetricTable title="Product Clicks" rows={summary.topClickedProducts || []} filename="smartsearch-product-clicks" />
               <MetricTable title="Added To Cart" rows={summary.topCartProducts || []} filename="smartsearch-add-to-cart-products" />
               <MetricTable title="Added To Quote" rows={summary.topQuoteProducts || []} filename="smartsearch-add-to-quote-products" />
+              <MetricTable title="Purchased Products" rows={summary.topPurchasedProducts || []} filename="smartsearch-purchased-products" />
               <MetricTable title="Event Types" rows={summary.topEvents || []} filename="smartsearch-event-types" />
               <MetricTable title="Cart Adds By Search" rows={summary.topCartQueries || []} filename="smartsearch-cart-by-search" />
               <MetricTable title="Quote Adds By Search" rows={summary.topQuoteQueries || []} filename="smartsearch-quote-by-search" />
+              <MetricTable title="Purchases By Search" rows={summary.topPurchaseQueries || []} filename="smartsearch-purchase-by-search" />
               <MetricTable title="Search To Cart Product" rows={summary.topCartSearchProducts || []} filename="smartsearch-search-to-cart-product" />
               <MetricTable title="Search To Quote Product" rows={summary.topQuoteSearchProducts || []} filename="smartsearch-search-to-quote-product" />
             </div>
@@ -245,8 +367,8 @@ function MetricTable({ title, rows, filename }: { title: string; rows: MetricRow
         </tbody>
       </table>
       {rows.length > visibleRows.length ? (
-        <button onClick={() => setLimit(limit + 10)} style={{ ...outlineButtonStyle, marginTop: 10 }}>
-          Load more rows ({visibleRows.length}/{rows.length})
+        <button onClick={() => setLimit(rows.length)} style={{ ...outlineButtonStyle, marginTop: 10 }}>
+          View all rows ({rows.length})
         </button>
       ) : null}
     </div>
@@ -291,8 +413,8 @@ function FunnelTable({ rows }: { rows: FunnelRow[] }) {
         </table>
       </div>
       {rows.length > visibleRows.length ? (
-        <button onClick={() => setLimit(limit + 20)} style={{ ...outlineButtonStyle, marginTop: 10 }}>
-          Load more rows ({visibleRows.length}/{rows.length})
+        <button onClick={() => setLimit(rows.length)} style={{ ...outlineButtonStyle, marginTop: 10 }}>
+          View all rows ({rows.length})
         </button>
       ) : null}
     </div>
@@ -357,7 +479,7 @@ function RawEventsTable({
       </div>
       {rows.length < total ? (
         <button onClick={onLoadMore} disabled={loading} style={{ ...outlineButtonStyle, marginTop: 10 }}>
-          {loading ? "Loading..." : `Load more event rows (${rows.length}/${total})`}
+          {loading ? "Loading..." : `View more event rows (${rows.length}/${total})`}
         </button>
       ) : null}
     </div>
