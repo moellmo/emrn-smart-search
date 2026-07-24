@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="EMRN Smart Search">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#14365d" />
+      <stop offset="1" stop-color="#0b2542" />
+    </linearGradient>
+    <filter id="shadow" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="2" stdDeviation="2" flood-color="#071a2e" flood-opacity=".35" />
+    </filter>
+  </defs>
+  <rect width="64" height="64" rx="16" fill="url(#bg)" />
+  <circle cx="29" cy="30" r="14" fill="#fff" stroke="#f06b6f" stroke-width="5" filter="url(#shadow)" />
+  <path d="m39.5 40.5 11 11" fill="none" stroke="#f06b6f" stroke-linecap="round" stroke-width="7" />
+  <path d="M48 10v12M42 16h12" stroke="#ffd166" stroke-linecap="round" stroke-width="3" />
+  <circle cx="22.5" cy="24" r="3" fill="#d9f3ff" />
+</svg>
