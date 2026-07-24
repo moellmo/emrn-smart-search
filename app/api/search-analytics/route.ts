@@ -3,11 +3,20 @@ import { typesenseAdmin } from "../../../lib/typesense";
 
 const COLLECTION_NAME = "emrn_search_analytics";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type, x-smartsearch-admin-password",
-};
+function corsHeaders(req: NextRequest) {
+  const origin = req.headers.get("origin") || "";
+  const allowedOrigin = ["https://emrn.ca", "https://www.emrn.ca", "http://localhost:3000"].includes(origin)
+    ? origin
+    : "https://emrn.ca";
+
+  return {
+    "Access-Control-Allow-Origin": allowedOrigin,
+    "Access-Control-Allow-Credentials": "true",
+    "Vary": "Origin",
+    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type, x-smartsearch-admin-password",
+  };
+}
 
 type AnalyticsDocument = {
   id?: string;
@@ -60,8 +69,8 @@ async function ensureAnalyticsCollection() {
   }
 }
 
-export async function OPTIONS() {
-  return new NextResponse(null, { status: 204, headers: corsHeaders });
+export async function OPTIONS(req: NextRequest) {
+  return new NextResponse(null, { status: 204, headers: corsHeaders(req) });
 }
 
 export async function POST(req: NextRequest) {
@@ -71,7 +80,7 @@ export async function POST(req: NextRequest) {
   const now = Date.now();
   const event = String(body?.event || "").trim().slice(0, 80);
   if (!event) {
-    return NextResponse.json({ ok: false, error: "Missing event." }, { status: 400, headers: corsHeaders });
+    return NextResponse.json({ ok: false, error: "Missing event." }, { status: 400, headers: corsHeaders(req) });
   }
 
   await typesenseAdmin.collections(COLLECTION_NAME).documents().create({
@@ -87,7 +96,7 @@ export async function POST(req: NextRequest) {
     created_at: now,
   });
 
-  return NextResponse.json({ ok: true }, { headers: corsHeaders });
+  return NextResponse.json({ ok: true }, { headers: corsHeaders(req) });
 }
 
 function documentValue(document: AnalyticsDocument | undefined, key: keyof AnalyticsDocument) {
@@ -209,7 +218,7 @@ function analyticsDocument(row: AnalyticsHit) {
 
 export async function GET(req: NextRequest) {
   if (!isAuthorized(req)) {
-    return NextResponse.json({ error: "Invalid admin password." }, { status: 401, headers: corsHeaders });
+    return NextResponse.json({ error: "Invalid admin password." }, { status: 401, headers: corsHeaders(req) });
   }
 
   try {
@@ -217,7 +226,7 @@ export async function GET(req: NextRequest) {
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Could not prepare analytics storage." },
-      { status: 500, headers: corsHeaders }
+      { status: 500, headers: corsHeaders(req) }
     );
   }
 
@@ -250,12 +259,12 @@ export async function GET(req: NextRequest) {
           hasMore: page * perPage < Number(results.found || 0),
           rows,
         },
-        { headers: corsHeaders }
+        { headers: corsHeaders(req) }
       );
     } catch (error) {
       return NextResponse.json(
         { error: error instanceof Error ? error.message : "Could not load analytics events." },
-        { status: 500, headers: corsHeaders }
+        { status: 500, headers: corsHeaders(req) }
       );
     }
   }
@@ -282,7 +291,7 @@ export async function GET(req: NextRequest) {
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Could not load analytics." },
-      { status: 500, headers: corsHeaders }
+      { status: 500, headers: corsHeaders(req) }
     );
   }
 
@@ -307,6 +316,6 @@ export async function GET(req: NextRequest) {
       queryFunnel: funnelByQuery(rows),
       recent: rows.slice(0, 50).map((row) => row.document),
     },
-    { headers: corsHeaders }
+    { headers: corsHeaders(req) }
   );
 }
