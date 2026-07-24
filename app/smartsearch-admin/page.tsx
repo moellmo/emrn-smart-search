@@ -39,41 +39,6 @@ type PreviewProduct = {
   smart_reasons?: string[];
 };
 
-type AnalyticsMetric = {
-  value: string;
-  sku?: string;
-  count: number;
-};
-
-type AnalyticsFunnelRow = {
-  value: string;
-  count: number;
-  searches: number;
-  noResults: number;
-  clicks: number;
-  carts: number;
-  quotes: number;
-  purchases: number;
-};
-
-type AnalyticsSummary = {
-  total?: number;
-  searchVolume?: AnalyticsMetric[];
-  topQueries?: AnalyticsMetric[];
-  topEvents?: AnalyticsMetric[];
-  topNoResultQueries?: AnalyticsMetric[];
-  topClickedProducts?: AnalyticsMetric[];
-  topCartProducts?: AnalyticsMetric[];
-  topQuoteProducts?: AnalyticsMetric[];
-  topPurchasedProducts?: AnalyticsMetric[];
-  topCartQueries?: AnalyticsMetric[];
-  topQuoteQueries?: AnalyticsMetric[];
-  topPurchaseQueries?: AnalyticsMetric[];
-  topCartSearchProducts?: AnalyticsMetric[];
-  topQuoteSearchProducts?: AnalyticsMetric[];
-  queryFunnel?: AnalyticsFunnelRow[];
-};
-
 type ReindexStatus = {
   ok?: boolean;
   status?: "running" | "success" | "failed";
@@ -92,6 +57,7 @@ type ReindexStatus = {
 };
 
 const PREVIEW_PAGE_SIZE = 48;
+const ADMIN_PASSWORD_KEY = "emrn-smartsearch-admin-password";
 
 const blankControls: SearchOverrides = {
   redirects: [],
@@ -164,7 +130,20 @@ function formatDuration(ms?: number) {
 }
 
 export default function SmartSearchAdminPage() {
-  const [password, setPassword] = useState("");
+  const [password, setPassword] = useState(() => {
+    try {
+      return typeof window === "undefined" ? "" : window.localStorage.getItem(ADMIN_PASSWORD_KEY) || "";
+    } catch {
+      return "";
+    }
+  });
+  const [rememberPassword, setRememberPassword] = useState(() => {
+    try {
+      return typeof window !== "undefined" && Boolean(window.localStorage.getItem(ADMIN_PASSWORD_KEY));
+    } catch {
+      return false;
+    }
+  });
   const [status, setStatus] = useState("");
   const [loaded, setLoaded] = useState(false);
 
@@ -179,7 +158,6 @@ export default function SmartSearchAdminPage() {
   const [noResultsRows, setNoResultsRows] = useState<Array<{ term: string; values: string }>>([]);
   const [bulkRules, setBulkRules] = useState("");
   const [twoWaySynonyms, setTwoWaySynonyms] = useState(true);
-  const [analytics, setAnalytics] = useState<AnalyticsSummary | null>(null);
   const [reindexStatus, setReindexStatus] = useState<ReindexStatus | null>(null);
   const [savedRuntime, setSavedRuntime] = useState<SearchOverrides>(blankControls);
   const [effectiveControls, setEffectiveControls] = useState<SearchOverrides>(blankControls);
@@ -224,6 +202,17 @@ export default function SmartSearchAdminPage() {
     }),
     [redirects, pinnedRows, brandPinnedRows, categoryPinnedRows, categoryIdPinnedRows, boostRows, noResultsRows, hiddenSkus, privateCategoryRows, twoWaySynonyms]
   );
+
+  function savePasswordPreference(value: string, remember: boolean) {
+    setPassword(value);
+    setRememberPassword(remember);
+    try {
+      if (remember && value) window.localStorage.setItem(ADMIN_PASSWORD_KEY, value);
+      else window.localStorage.removeItem(ADMIN_PASSWORD_KEY);
+    } catch {
+      // Storage may be disabled by the browser.
+    }
+  }
 
   async function loadControls() {
     setStatus("Loading...");
@@ -320,52 +309,6 @@ export default function SmartSearchAdminPage() {
     setStatus(
       `Saved ${Object.keys(saved.boostTerms || {}).length} synonym rule(s), ${Object.keys(saved.pinnedSkus || {}).length} search pin(s), ${Object.keys(saved.brandPinnedSkus || {}).length} brand pin(s), and ${Object.keys(saved.categoryPinnedSkus || {}).length + Object.keys(saved.categoryIdPinnedSkus || {}).length} category pin(s). SmartSearch will update within about 30 seconds.`
     );
-  }
-
-  async function loadAnalytics() {
-    setStatus("Loading analytics...");
-    try {
-      const res = await fetch("/api/search-analytics", {
-        headers: {
-          "x-smartsearch-admin-password": password,
-        },
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        setStatus(data.error || "Could not load analytics.");
-        return;
-      }
-      setAnalytics(data);
-      setStatus(`Analytics loaded: ${data.total || 0} stored event${Number(data.total || 0) === 1 ? "" : "s"}.`);
-    } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Could not load analytics.");
-    }
-  }
-
-  async function sendAnalyticsTest() {
-    setStatus("Sending analytics test event...");
-    try {
-      const res = await fetch("/api/search-analytics", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          event: "admin_test",
-          query: "admin analytics test",
-          page_type: "smartsearch_admin",
-          url: window.location.href,
-        }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        setStatus(data.error || "Could not save analytics test event.");
-        return;
-      }
-      await loadAnalytics();
-    } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Could not save analytics test event.");
-    }
   }
 
   function exportBulkRules() {
@@ -661,21 +604,30 @@ export default function SmartSearchAdminPage() {
             Quickly pin SKUs, hide discontinued items, add redirects, improve query boosts, and customize no-results suggestions.
           </p>
 
-          <div style={{ display: "flex", gap: 10, marginTop: 18 }}>
+          <div style={{ display: "flex", gap: 10, marginTop: 18, flexWrap: "wrap", alignItems: "center" }}>
             <input
               type="password"
               value={password}
-              onChange={(event) => setPassword(event.target.value)}
+              onChange={(event) => savePasswordPreference(event.target.value, rememberPassword)}
               placeholder="Admin password"
-              style={{ flex: 1, height: 48, border: "1px solid #e5e7eb", borderRadius: 999, padding: "0 16px" }}
+              style={{ flex: "1 1 280px", height: 48, border: "1px solid #e5e7eb", borderRadius: 999, padding: "0 16px", minWidth: 0 }}
             />
+            <label style={{ ...outlineButtonStyle, height: 48, gap: 8 }}>
+              <input
+                type="checkbox"
+                checked={rememberPassword}
+                onChange={(event) => savePasswordPreference(password, event.target.checked)}
+              />
+              Remember
+            </label>
             <button onClick={loadControls} style={buttonStyle("#14365d")}>Load</button>
             <button onClick={saveControls} disabled={!loaded} style={buttonStyle("#c34d50")}>Save</button>
             <button onClick={reindexNow} style={buttonStyle("#166534")}>Reindex</button>
-            <button onClick={loadAnalytics} style={buttonStyle("#334155")}>Analytics</button>
-            <button onClick={sendAnalyticsTest} style={outlineButtonStyle}>Test analytics</button>
             <a href="/smartsearch-admin/analytics" style={linkButtonStyle}>Analytics page</a>
           </div>
+          <p style={{ margin: "10px 0 0", color: "#64748b", fontSize: 12 }}>
+            Remember stores the password only in this browser on this device. The analytics page will auto-fill the same saved password.
+          </p>
 
           {status && (
             <p
@@ -730,33 +682,7 @@ export default function SmartSearchAdminPage() {
           </div>
         </div>
 
-        {analytics && (
-          <Panel title="Analytics" help="Recent SmartSearch activity. Search, click, cart, quote, and no-result logging runs in the background so it does not slow customer searches. Completed purchases need a separate checkout/order-confirmation hook before they can show here.">
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 14, marginBottom: 14 }}>
-              <AnalyticsStat label="Events stored" value={analytics.total || 0} />
-              <AnalyticsStat label="Search terms" value={(analytics.searchVolume || []).length} />
-              <AnalyticsStat label="No-result terms" value={(analytics.topNoResultQueries || []).length} />
-              <AnalyticsStat label="Cart adds" value={(analytics.topEvents || []).find((item: { value: string; count: number }) => item.value === "add_to_cart")?.count || 0} />
-            </div>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 14 }}>
-              <MetricList title="Search term volume" items={analytics.searchVolume || analytics.topQueries} />
-              <MetricList title="No-result searches" items={analytics.topNoResultQueries} />
-              <MetricList title="Event types" items={analytics.topEvents} />
-              <MetricList title="Products clicked" items={analytics.topClickedProducts} />
-              <MetricList title="Products added to cart" items={analytics.topCartProducts} />
-              <MetricList title="Products added to quote" items={analytics.topQuoteProducts} />
-              <MetricList title="Cart adds by search" items={analytics.topCartQueries} />
-              <MetricList title="Quote adds by search" items={analytics.topQuoteQueries} />
-              <MetricList title="Purchases by search" items={analytics.topPurchaseQueries} />
-              <MetricList title="Search -> cart product" items={analytics.topCartSearchProducts} />
-              <MetricList title="Search -> quote product" items={analytics.topQuoteSearchProducts} />
-              <MetricList title="Purchased products" items={analytics.topPurchasedProducts} />
-            </div>
-            <QueryFunnelList items={analytics.queryFunnel} />
-          </Panel>
-        )}
-
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 18, marginTop: analytics ? 18 : 0 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 18 }}>
           <Panel title="Specific Search Control" help="Use this when one search term, brand page, or category page needs hand control. Pin SKUs to force result order. Search terms can also use synonyms and no-results suggestions. Save after adding.">
             <div style={{ display: "grid", gap: 10 }}>
               <label style={fieldLabelStyle}>
@@ -1192,77 +1118,6 @@ function PrivateCategoryRows({
   );
 }
 
-function AnalyticsStat({ label, value }: { label: string; value: number | string }) {
-  return (
-    <div style={{ border: "1px solid #e2e8f0", borderRadius: 14, padding: 14, background: "#f8fafc" }}>
-      <div style={{ color: "#64748b", fontSize: 12, fontWeight: 900, textTransform: "uppercase", letterSpacing: ".04em" }}>{label}</div>
-      <strong style={{ display: "block", marginTop: 6, color: "#14365d", fontSize: 26 }}>{value}</strong>
-    </div>
-  );
-}
-
-function MetricList({ title, items = [] }: { title: string; items?: Array<{ value: string; sku?: string; count: number }> }) {
-  return (
-    <div style={{ border: "1px solid #e2e8f0", borderRadius: 14, padding: 14, background: "#f8fafc" }}>
-      <h3 style={{ margin: "0 0 10px", fontSize: 16, color: "#111827" }}>{title}</h3>
-      {items.length ? (
-        items.slice(0, 8).map((item, index) => (
-          <div key={`${item.value}-${index}`} style={{ display: "flex", justifyContent: "space-between", gap: 10, padding: "7px 0", borderTop: index ? "1px solid #e5e7eb" : 0 }}>
-            <span style={{ color: "#1f2937", fontWeight: 800, overflow: "hidden", textOverflow: "ellipsis" }}>{item.value}{item.sku ? ` (${item.sku})` : ""}</span>
-            <strong style={{ color: "#c34d50" }}>{item.count}</strong>
-          </div>
-        ))
-      ) : (
-        <p style={{ color: "#64748b", margin: 0 }}>No data yet.</p>
-      )}
-    </div>
-  );
-}
-
-function QueryFunnelList({
-  items = [],
-}: {
-  items?: Array<{ value: string; count: number; searches: number; noResults: number; clicks: number; carts: number; quotes: number; purchases: number }>;
-}) {
-  return (
-    <div style={{ border: "1px solid #e2e8f0", borderRadius: 14, padding: 14, background: "#f8fafc", marginTop: 14 }}>
-      <h3 style={{ margin: "0 0 10px", fontSize: 16, color: "#111827" }}>Search term funnel</h3>
-      {items.length ? (
-        <div style={{ overflowX: "auto" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 760 }}>
-            <thead>
-              <tr style={{ color: "#64748b", fontSize: 12, textAlign: "left" }}>
-                <th style={tableHeaderStyle}>Search term</th>
-                <th style={tableHeaderStyle}>Searches</th>
-                <th style={tableHeaderStyle}>No results</th>
-                <th style={tableHeaderStyle}>Clicks</th>
-                <th style={tableHeaderStyle}>Carts</th>
-                <th style={tableHeaderStyle}>Quotes</th>
-                <th style={tableHeaderStyle}>Purchases</th>
-              </tr>
-            </thead>
-            <tbody>
-              {items.slice(0, 20).map((item) => (
-                <tr key={item.value}>
-                  <td style={{ ...tableCellStyle, fontWeight: 900, color: "#14365d", maxWidth: 280, overflowWrap: "anywhere" }}>{item.value}</td>
-                  <td style={tableCellStyle}>{item.searches || 0}</td>
-                  <td style={{ ...tableCellStyle, color: item.noResults ? "#b91c1c" : "#334155", fontWeight: item.noResults ? 900 : 700 }}>{item.noResults || 0}</td>
-                  <td style={tableCellStyle}>{item.clicks || 0}</td>
-                  <td style={tableCellStyle}>{item.carts || 0}</td>
-                  <td style={tableCellStyle}>{item.quotes || 0}</td>
-                  <td style={tableCellStyle}>{item.purchases || 0}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      ) : (
-        <p style={{ color: "#64748b", margin: 0 }}>No data yet.</p>
-      )}
-    </div>
-  );
-}
-
 function Panel({ title, help, children }: { title: string; help: string; children: React.ReactNode }) {
   return (
     <section style={{ background: "#fff", border: "1px solid #d8e1ea", borderRadius: 18, padding: 18, boxShadow: "0 10px 24px rgba(15,23,42,.05)" }}>
@@ -1438,19 +1293,6 @@ const textareaStyle = {
   resize: "vertical" as const,
   color: "#111827",
   background: "#fff",
-};
-
-const tableHeaderStyle = {
-  borderBottom: "1px solid #e2e8f0",
-  padding: "9px 8px",
-  fontWeight: 900,
-};
-
-const tableCellStyle = {
-  borderBottom: "1px solid #e2e8f0",
-  padding: "9px 8px",
-  color: "#334155",
-  fontWeight: 700,
 };
 
 const smallButtonStyle = {

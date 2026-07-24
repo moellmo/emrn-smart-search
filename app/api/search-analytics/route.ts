@@ -220,10 +220,19 @@ function analyticsDateFilter(req: NextRequest) {
   const range = String(req.nextUrl.searchParams.get("range") || "all").trim().toLowerCase();
   if (range === "all") return "";
 
-  const days = range === "7d" ? 7 : range === "30d" ? 30 : range === "90d" ? 90 : 0;
+  const now = Date.now();
+  if (range === "this_week") {
+    const start = new Date(now);
+    const day = start.getDay();
+    const daysSinceMonday = day === 0 ? 6 : day - 1;
+    start.setHours(0, 0, 0, 0);
+    start.setDate(start.getDate() - daysSinceMonday);
+    return `created_at:>=${start.getTime()} && created_at:<=${now}`;
+  }
+
+  const days = range === "7d" ? 7 : range === "30d" ? 30 : range === "3m" ? 92 : range === "90d" ? 90 : 0;
   if (!days) return "";
 
-  const now = Date.now();
   return `created_at:>=${now - days * 24 * 60 * 60 * 1000} && created_at:<=${now}`;
 }
 

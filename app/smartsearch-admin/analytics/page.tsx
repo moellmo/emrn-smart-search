@@ -55,8 +55,10 @@ const EVENT_PAGE_SIZE = 100;
 const ANALYTICS_RANGE_KEY = "emrn-smartsearch-analytics-range";
 const ANALYTICS_PASSWORD_KEY = "emrn-smartsearch-admin-password";
 const RANGE_OPTIONS = [
+  { value: "this_week", label: "This week" },
   { value: "7d", label: "Last 7 days" },
   { value: "30d", label: "Last 30 days" },
+  { value: "3m", label: "Last 3 months" },
   { value: "90d", label: "Last 90 days" },
   { value: "all", label: "All time" },
 ];
