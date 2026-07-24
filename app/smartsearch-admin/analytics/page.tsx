@@ -97,7 +97,7 @@ export default function SmartSearchAnalyticsPage() {
   }, [summary]);
   const totalSearchEvents = (eventCounts.get("search") || 0) + (eventCounts.get("results_view") || 0) + (eventCounts.get("server_search") || 0);
 
-  function rangeParams() {
+  function rangeParams(): Record<string, string> {
     return range === "all" ? {} : { range };
   }
 
