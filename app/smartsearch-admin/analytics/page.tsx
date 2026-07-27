@@ -38,6 +38,12 @@ type AnalyticsSummary = {
   searchVolume: MetricRow[];
   topEvents: MetricRow[];
   topNoResultQueries: MetricRow[];
+  noClickQueries: MetricRow[];
+  fewResultQueries: MetricRow[];
+  topRefinedQueries: MetricRow[];
+  autocompleteShownQueries: MetricRow[];
+  autocompleteEnterQueries: MetricRow[];
+  categoryClicks: MetricRow[];
   topClickedProducts: MetricRow[];
   topCartProducts: MetricRow[];
   topQuoteProducts: MetricRow[];
@@ -299,6 +305,12 @@ export default function SmartSearchAnalyticsPage() {
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 18 }}>
               <MetricTable title="Search Term Volume" rows={summary.searchVolume || []} filename="smartsearch-search-volume" />
               <MetricTable title="No-Result Searches" rows={summary.topNoResultQueries || []} filename="smartsearch-no-results" />
+              <MetricTable title="Searches With No Clicks" rows={summary.noClickQueries || []} filename="smartsearch-no-click-searches" />
+              <MetricTable title="Few-Result Searches" rows={summary.fewResultQueries || []} filename="smartsearch-few-result-searches" />
+              <MetricTable title="Searches Quickly Replaced" rows={summary.topRefinedQueries || []} filename="smartsearch-refined-searches" />
+              <MetricTable title="Autocomplete Shown" rows={summary.autocompleteShownQueries || []} filename="smartsearch-autocomplete-shown" />
+              <MetricTable title="Autocomplete Entered Anyway" rows={summary.autocompleteEnterQueries || []} filename="smartsearch-autocomplete-entered" />
+              <MetricTable title="Category Clicks" rows={summary.categoryClicks || []} filename="smartsearch-category-clicks" />
               <MetricTable title="Product Clicks" rows={summary.topClickedProducts || []} filename="smartsearch-product-clicks" />
               <MetricTable title="Added To Cart" rows={summary.topCartProducts || []} filename="smartsearch-add-to-cart-products" />
               <MetricTable title="Added To Quote" rows={summary.topQuoteProducts || []} filename="smartsearch-add-to-quote-products" />

@@ -291,6 +291,73 @@ function applyNaturalLanguageAvoidTermRanking(hits: any[] = [], avoidTerms: stri
   return [...hits].sort((a, b) => score(b) - score(a));
 }
 
+function hitCategoryText(hit: any) {
+  const doc = hit.document || {};
+  return normalizeSearchText(Array.isArray(doc.categories) ? doc.categories.join(" ") : String(doc.categories || ""));
+}
+
+function naturalLanguageCategoryIndex(hit: any, categoryQueries: string[] = []) {
+  const categoryText = hitCategoryText(hit);
+  if (!categoryText) return -1;
+  return categoryQueries
+    .map((category, index) => ({ category: normalizeSearchText(category), index }))
+    .find((item) => item.category && (categoryText.includes(item.category) || item.category.includes(categoryText)))?.index ?? -1;
+}
+
+function applyNaturalLanguageBalancedRanking(hits: any[] = [], categoryQueries: string[] = []) {
+  const cleanCategories = categoryQueries.map((category) => normalizeSearchText(category)).filter(Boolean);
+  if (!hits.length || cleanCategories.length < 2) return hits;
+
+  const buckets = new Map<number, any[]>();
+  const other: any[] = [];
+
+  for (const hit of hits) {
+    const index = naturalLanguageCategoryIndex(hit, categoryQueries);
+    if (index >= 0) {
+      if (!buckets.has(index)) buckets.set(index, []);
+      buckets.get(index)!.push(hit);
+    } else {
+      other.push(hit);
+    }
+  }
+
+  const score = (hit: any) => Number(hit.document?.popularity_score || 0);
+  for (const bucket of buckets.values()) {
+    bucket.sort((a, b) => score(b) - score(a));
+  }
+
+  const balanced: any[] = [];
+  const bucketIndexes = Array.from(buckets.keys()).sort((a, b) => a - b);
+  let added = true;
+  while (added && balanced.length < Math.min(hits.length, 48)) {
+    added = false;
+    for (const index of bucketIndexes) {
+      const next = buckets.get(index)?.shift();
+      if (next) {
+        balanced.push(next);
+        added = true;
+      }
+    }
+  }
+
+  return mergeHits(balanced, bucketIndexes.flatMap((index) => buckets.get(index) || []), other);
+}
+
+function reorderCategoryFacetCounts(result: any, categoryQueries: string[] = []) {
+  const facet = facetByField(result, "categories");
+  if (!facet?.counts?.length || !categoryQueries.length) return;
+
+  const priority = new Map(categoryQueries.map((category, index) => [normalizeSearchText(category), index]));
+  facet.counts = [...facet.counts].sort((a: any, b: any) => {
+    const aValue = normalizeSearchText(a.value);
+    const bValue = normalizeSearchText(b.value);
+    const aPriority = priority.has(aValue) ? priority.get(aValue)! : 999;
+    const bPriority = priority.has(bValue) ? priority.get(bValue)! : 999;
+    if (aPriority !== bPriority) return aPriority - bPriority;
+    return Number(b.count || 0) - Number(a.count || 0) || String(a.value || "").localeCompare(String(b.value || ""));
+  });
+}
+
 function cleanCategoryIds(value: string | null) {
   return Array.from(
     new Set(
@@ -460,6 +527,17 @@ function scheduleSearchAnalytics({
         url: String(referer || "").trim().slice(0, 500),
         created_at: now,
       });
+      if (hitCount > 0 && hitCount <= 5) {
+        await typesenseAdmin.collections(ANALYTICS_COLLECTION_NAME).documents().create({
+          id: `${now}-${Math.random().toString(36).slice(2)}-few`,
+          event: "server_few_results",
+          query: cleanQuery.slice(0, 180),
+          customer_id: String(customerId || "").trim().slice(0, 80),
+          page_type: "smartsearch_api",
+          url: String(referer || "").trim().slice(0, 500),
+          created_at: now,
+        });
+      }
     } catch (error) {
       console.warn("[SmartSearch analytics] could not record server search", error);
     }
@@ -698,13 +776,16 @@ export async function GET(req: NextRequest) {
     const supplementalHits = fulfilledSupplementalResults.flatMap((result) => result?.hits || []);
 
     const rankedHits = applyBrandQueryRanking(
-      applyNaturalLanguageAvoidTermRanking(
-        applyIntentRanking(
-          applyPrivateCategoryFilter(applyHiddenSkuFilter(mergeHits(supplementalHits, results.hits), controls), customerId, controls),
-          q,
-          smartQuery.search_query
+      applyNaturalLanguageBalancedRanking(
+        applyNaturalLanguageAvoidTermRanking(
+          applyIntentRanking(
+            applyPrivateCategoryFilter(applyHiddenSkuFilter(mergeHits(supplementalHits, results.hits), controls), customerId, controls),
+            q,
+            smartQuery.search_query
+          ),
+          naturalLanguagePlan.avoid_terms
         ),
-        naturalLanguagePlan.avoid_terms
+        naturalLanguagePlan.active ? naturalLanguagePlan.category_queries : []
       ),
       q
     );
@@ -728,6 +809,7 @@ export async function GET(req: NextRequest) {
         ...fulfilledSupplementalResults.map((result) => Number(result?.found || 0))
       );
     }
+    reorderCategoryFacetCounts(results, naturalLanguagePlan.active ? naturalLanguagePlan.category_queries : []);
     addMissingSingleValueFacetBuckets(results);
     const pageStart = (page - 1) * requestedPerPage;
     results.hits = filteredHits.slice(pageStart, pageStart + requestedPerPage).map((hit: any) => ({

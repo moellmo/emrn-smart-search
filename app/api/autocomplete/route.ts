@@ -52,6 +52,16 @@ function facetCountsFromHits(hits: any[] = [], field: "brand" | "categories", li
     .slice(0, limit);
 }
 
+function reorderFacetValues(values: Array<{ value: string; count: number; url?: string }>, priorityValues: string[] = []) {
+  const priority = new Map(priorityValues.map((value, index) => [normalizeSearchText(value), index]));
+  return [...values].sort((a, b) => {
+    const aPriority = priority.has(normalizeSearchText(a.value)) ? priority.get(normalizeSearchText(a.value))! : 999;
+    const bPriority = priority.has(normalizeSearchText(b.value)) ? priority.get(normalizeSearchText(b.value))! : 999;
+    if (aPriority !== bPriority) return aPriority - bPriority;
+    return Number(b.count || 0) - Number(a.count || 0) || String(a.value || "").localeCompare(String(b.value || ""));
+  });
+}
+
 function normalizeHit(doc: any) {
   return {
     id: doc.id,
@@ -437,7 +447,7 @@ export async function GET(req: NextRequest) {
     },
     {
       field: "categories",
-      values: facetCountsFromHits(hits, "categories").map((item) => ({
+      values: reorderFacetValues(facetCountsFromHits(hits, "categories"), naturalLanguagePlan.category_queries).map((item) => ({
         ...item,
         url: categoryUrls.get(item.value) || "",
       })),

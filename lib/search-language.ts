@@ -134,8 +134,12 @@ export const manualSearchSynonyms: Array<[string, string[]]> = [
   ["pression artérielle", ["blood pressure", "blood pressure monitor", "blood pressure cuff"]],
   ["stethoscope", ["stethoscope"]],
   ["stéthoscope", ["stethoscope"]],
+  ["stetoscope", ["stethoscope"]],
+  ["stethscope", ["stethoscope"]],
   ["otoscope", ["otoscope"]],
   ["otoscopes", ["otoscopes"]],
+  ["otocscope", ["otoscope"]],
+  ["otoscop", ["otoscope"]],
   ["ophtalmoscope", ["ophthalmoscope"]],
   ["ophtalmoscopes", ["ophthalmoscopes"]],
   ["oxymetre", ["pulse oximeter", "oximeter"]],
@@ -397,11 +401,54 @@ function escapeRegExp(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-function matchesNormalizedTerm(normalizedQuery: string, normalizedTerm: string) {
+function editDistanceWithin(a: string, b: string, maxDistance: number) {
+  if (Math.abs(a.length - b.length) > maxDistance) return false;
+  const previous = Array.from({ length: b.length + 1 }, (_, index) => index);
+
+  for (let i = 1; i <= a.length; i += 1) {
+    let best = i;
+    const current = [i];
+    for (let j = 1; j <= b.length; j += 1) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      const value = Math.min(previous[j] + 1, current[j - 1] + 1, previous[j - 1] + cost);
+      current[j] = value;
+      if (value < best) best = value;
+    }
+    if (best > maxDistance) return false;
+    previous.splice(0, previous.length, ...current);
+  }
+
+  return previous[b.length] <= maxDistance;
+}
+
+function looksLikeExactCode(value: string) {
+  return /\d/.test(value) || /[./-]/.test(value);
+}
+
+function fuzzyTokenMatch(queryToken: string, termToken: string) {
+  if (queryToken === termToken) return true;
+  if (queryToken.length < 5 || termToken.length < 5) return false;
+  const maxDistance = Math.max(queryToken.length, termToken.length) >= 9 ? 2 : 1;
+  return editDistanceWithin(queryToken, termToken, maxDistance);
+}
+
+export function matchesNormalizedTerm(normalizedQuery: string, normalizedTerm: string) {
   if (!normalizedQuery || !normalizedTerm) return false;
   if (normalizedQuery === normalizedTerm) return true;
   const pattern = new RegExp(`(^|\\s)${escapeRegExp(normalizedTerm)}(?=\\s|$)`);
-  return pattern.test(normalizedQuery);
+  if (pattern.test(normalizedQuery)) return true;
+  if (looksLikeExactCode(normalizedQuery) || looksLikeExactCode(normalizedTerm)) return false;
+
+  const queryTokens = normalizedQuery.split(/\s+/).filter(Boolean);
+  const termTokens = normalizedTerm.split(/\s+/).filter(Boolean);
+  if (!queryTokens.length || !termTokens.length || termTokens.length > queryTokens.length) return false;
+
+  for (let start = 0; start <= queryTokens.length - termTokens.length; start += 1) {
+    const querySlice = queryTokens.slice(start, start + termTokens.length);
+    if (querySlice.every((token, index) => fuzzyTokenMatch(token, termTokens[index]))) return true;
+  }
+
+  return false;
 }
 
 const frenchSignals = [

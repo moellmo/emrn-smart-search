@@ -188,6 +188,11 @@ export default function SmartSearchAdminPage() {
   const [boostRows, setBoostRows] = useState<Array<{ term: string; values: string }>>([]);
   const [noResultsRows, setNoResultsRows] = useState<Array<{ term: string; values: string }>>([]);
   const [naturalLanguageRulesJson, setNaturalLanguageRulesJson] = useState("{}");
+  const [naturalRulePhrase, setNaturalRulePhrase] = useState("");
+  const [naturalRuleCategories, setNaturalRuleCategories] = useState("");
+  const [naturalRuleTerms, setNaturalRuleTerms] = useState("");
+  const [naturalRuleAvoid, setNaturalRuleAvoid] = useState("");
+  const [naturalRuleTestStatus, setNaturalRuleTestStatus] = useState("");
   const [bulkRules, setBulkRules] = useState("");
   const [twoWaySynonyms, setTwoWaySynonyms] = useState(true);
   const [reindexStatus, setReindexStatus] = useState<ReindexStatus | null>(null);
@@ -349,6 +354,57 @@ export default function SmartSearchAdminPage() {
     setStatus(
       `Saved ${Object.keys(saved.boostTerms || {}).length} synonym rule(s), ${Object.keys(saved.pinnedSkus || {}).length} search pin(s), ${Object.keys(saved.brandPinnedSkus || {}).length} brand pin(s), and ${Object.keys(saved.categoryPinnedSkus || {}).length + Object.keys(saved.categoryIdPinnedSkus || {}).length} category pin(s). SmartSearch will update within about 30 seconds.`
     );
+  }
+
+  function addNaturalLanguageRuleFromBuilder() {
+    const phrase = naturalRulePhrase.trim();
+    if (!phrase) {
+      setNaturalRuleTestStatus("Add a phrase before saving the rule.");
+      return;
+    }
+
+    if (!validateNaturalLanguageRulesJson(naturalLanguageRulesJson)) {
+      setNaturalRuleTestStatus("Fix the JSON editor first, then add the form rule.");
+      return;
+    }
+
+    const rules = parseNaturalLanguageRulesJson(naturalLanguageRulesJson);
+    rules[phrase] = {
+      categoryQueries: splitCsv(naturalRuleCategories),
+      recallQueries: splitCsv(naturalRuleTerms),
+      avoidTerms: splitCsv(naturalRuleAvoid),
+    };
+    setNaturalLanguageRulesJson(formatNaturalLanguageRules(rules));
+    setNaturalRuleTestStatus(`Rule ready for "${phrase}". Click Save all controls to publish it.`);
+  }
+
+  async function testNaturalLanguageRule() {
+    const phrase = naturalRulePhrase.trim();
+    if (!phrase) {
+      setNaturalRuleTestStatus("Add a phrase to test.");
+      return;
+    }
+
+    setNaturalRuleTestStatus("Testing autocomplete...");
+    try {
+      const params = new URLSearchParams({ q: phrase });
+      const res = await fetch(`/api/autocomplete?${params.toString()}`, { cache: "no-store" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setNaturalRuleTestStatus(data.error || "Autocomplete test failed.");
+        return;
+      }
+      const categories = ((data.facets || []).find((facet: { field?: string }) => facet.field === "categories")?.values || [])
+        .slice(0, 6)
+        .map((item: { value?: string }) => item.value)
+        .filter(Boolean)
+        .join(", ");
+      setNaturalRuleTestStatus(
+        `Test found ${(data.products || []).length} autocomplete product(s). Top categories: ${categories || "none yet"}.`
+      );
+    } catch (error) {
+      setNaturalRuleTestStatus(error instanceof Error ? error.message : "Autocomplete test failed.");
+    }
   }
 
   function exportBulkRules() {
@@ -930,6 +986,55 @@ export default function SmartSearchAdminPage() {
           </Panel>
 
           <Panel title="Natural Language Rules" help="Editable broad-query planner rules. A saved phrase here overrides the built-in mapping for that phrase. Use categoryQueries for category recall, recallQueries for product terms, and avoidTerms to push wrong literal matches down.">
+            <div style={{ display: "grid", gap: 10, marginBottom: 14, padding: 12, border: "1px solid #e5e7eb", borderRadius: 14, background: "#f8fafc" }}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                <label style={fieldLabelStyle}>
+                  Phrase
+                  <input
+                    value={naturalRulePhrase}
+                    onChange={(event) => setNaturalRulePhrase(event.target.value)}
+                    placeholder="doctor office supplies"
+                    style={inputStyle}
+                  />
+                </label>
+                <label style={fieldLabelStyle}>
+                  Categories
+                  <input
+                    value={naturalRuleCategories}
+                    onChange={(event) => setNaturalRuleCategories(event.target.value)}
+                    placeholder="Nursing Supplies, Diagnostics, Wound Care"
+                    style={inputStyle}
+                  />
+                </label>
+                <label style={fieldLabelStyle}>
+                  Product terms
+                  <input
+                    value={naturalRuleTerms}
+                    onChange={(event) => setNaturalRuleTerms(event.target.value)}
+                    placeholder="exam gloves, masks, otoscope, blood pressure cuff"
+                    style={inputStyle}
+                  />
+                </label>
+                <label style={fieldLabelStyle}>
+                  Avoid terms
+                  <input
+                    value={naturalRuleAvoid}
+                    onChange={(event) => setNaturalRuleAvoid(event.target.value)}
+                    placeholder="office binder, copy paper"
+                    style={inputStyle}
+                  />
+                </label>
+              </div>
+              <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+                <button type="button" onClick={addNaturalLanguageRuleFromBuilder} style={buttonStyle("#14365d")}>
+                  Add / update rule
+                </button>
+                <button type="button" onClick={() => void testNaturalLanguageRule()} style={outlineButtonStyle}>
+                  Test autocomplete
+                </button>
+                {naturalRuleTestStatus ? <span style={{ color: /found|ready/i.test(naturalRuleTestStatus) ? "#166534" : "#b91c1c", fontWeight: 800 }}>{naturalRuleTestStatus}</span> : null}
+              </div>
+            </div>
             <textarea
               value={naturalLanguageRulesJson}
               onChange={(event) => setNaturalLanguageRulesJson(event.target.value)}

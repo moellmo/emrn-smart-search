@@ -173,6 +173,13 @@ function countEventProducts(rows: AnalyticsHit[], event: string) {
   return Array.from(map.values()).sort((a, b) => b.count - a.count).slice(0, 25);
 }
 
+function noClickQueries(rows: AnalyticsHit[]) {
+  return funnelByQuery(rows)
+    .filter((row) => row.searches > 0 && row.clicks === 0 && row.carts === 0 && row.quotes === 0 && row.purchases === 0)
+    .map(({ value, searches }) => ({ value, count: searches }))
+    .slice(0, 25);
+}
+
 function funnelByQuery(rows: AnalyticsHit[]) {
   const map = new Map<
     string,
@@ -330,6 +337,12 @@ export async function GET(req: NextRequest) {
       searchVolume,
       topEvents: countBy(rows, "event"),
       topNoResultQueries: countQueriesForEvents(rows, ["no_results", "server_no_results"]),
+      noClickQueries: noClickQueries(rows),
+      fewResultQueries: countQueriesForEvents(rows, ["server_few_results"]),
+      topRefinedQueries: countQueriesForEvents(rows, ["search_refined"]),
+      autocompleteShownQueries: countQueriesForEvents(rows, ["autocomplete_shown"]),
+      autocompleteEnterQueries: countQueriesForEvents(rows, ["autocomplete_enter"]),
+      categoryClicks: countEventProducts(rows, "category_click"),
       topClickedProducts: countEventProducts(rows, "product_click"),
       topCartProducts: countEventProducts(rows, "add_to_cart"),
       topQuoteProducts: countEventProducts(rows, "add_to_quote"),

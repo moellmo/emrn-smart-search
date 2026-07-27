@@ -1,4 +1,4 @@
-import { normalizeSearchText } from "./search-language";
+import { matchesNormalizedTerm, normalizeSearchText } from "./search-language";
 import type { SearchOverrides } from "./search-overrides";
 
 export type NaturalLanguageSearchPlan = {
@@ -83,6 +83,10 @@ const manualIntentPlans: IntentPlan[] = [
     match: [
       "clinic supplies",
       "clici supplesi",
+      "clinc supplies",
+      "clinic suplies",
+      "clinic supllies",
+      "clinic supples",
       "clinic supply",
       "medical clinic supplies",
       "medical office supplies",
@@ -104,10 +108,11 @@ const manualIntentPlans: IntentPlan[] = [
       "Nursing Supplies",
       "Diagnostics",
       "Wound Care",
+      "PPE & Infection Control",
+      "Needles & Syringes",
       "First Aid Kits & Supplies",
       "Gloves",
       "Masks",
-      "Needles & Syringes",
       "Sterile Alcohol Prep Pads",
       "Sharps Containers",
       "Patient Care & Pharmacy",
@@ -133,7 +138,7 @@ const manualIntentPlans: IntentPlan[] = [
     avoidTerms: ["office binder", "copy paper", "marker"],
   },
   {
-    match: ["hospital supplies", "hospital supply", "fournitures hopital", "fournitures hôpital", "fournitures pour hopital", "fournitures pour hôpital", "materiel hospitalier", "matériel hospitalier"],
+    match: ["hospital supplies", "hospital supply", "hosptial supllies", "hosptial supplies", "hospital suplies", "hospital supllies", "fournitures hopital", "fournitures hôpital", "fournitures pour hopital", "fournitures pour hôpital", "materiel hospitalier", "matériel hospitalier"],
     categoryQueries: [
       "Nursing Supplies",
       "Diagnostics",
@@ -161,7 +166,7 @@ const manualIntentPlans: IntentPlan[] = [
     avoidTerms: ["office binder", "copy paper"],
   },
   {
-    match: ["nursing supplies", "nursing supply", "nurse supplies", "fournitures infirmieres", "fournitures infirmières", "fournitures soins infirmiers", "materiel infirmier", "matériel infirmier", "soins infirmiers"],
+    match: ["nursing supplies", "nursing supply", "nurse supplies", "nusing suplies", "nusing supplies", "nursing suplies", "nursing supllies", "fournitures infirmieres", "fournitures infirmières", "fournitures soins infirmiers", "materiel infirmier", "matériel infirmier", "soins infirmiers"],
     categoryQueries: [
       "Nursing Supplies",
       "Patient Care & Pharmacy",
@@ -298,7 +303,7 @@ function uniqueList(values: string[], limit: number) {
 function matchesAnyTerm(normalizedQuery: string, terms: string[]) {
   return terms.some((term) => {
     const normalizedTerm = normalizeSearchText(term);
-    return normalizedQuery === normalizedTerm || normalizedQuery.includes(normalizedTerm) || normalizedTerm.includes(normalizedQuery);
+    return matchesNormalizedTerm(normalizedQuery, normalizedTerm) || matchesNormalizedTerm(normalizedTerm, normalizedQuery);
   });
 }
 
