@@ -486,6 +486,23 @@ export function expandSearchQuery(query: string) {
   const additions = new Set<string>();
   const matchedTerms: string[] = [];
   let suggestedQuery = "";
+  const isFrenchOxygenMaskQuery = [
+    "masque oxygene",
+    "masque a oxygene",
+    "masque d oxygene",
+    "masques oxygene",
+  ].some((term) => normalized.includes(normalizeSearchText(term)));
+
+  if (isFrenchOxygenMaskQuery) {
+    ["oxygen mask", "oxygen masks", "non-rebreather mask", "high concentration oxygen mask"].forEach((synonym) => additions.add(synonym));
+    return {
+      original: query,
+      expanded: [query, ...Array.from(additions)].join(" "),
+      language: detectQueryLanguage(query),
+      expansions: Array.from(additions),
+      suggested_query: "oxygen mask",
+    };
+  }
 
   const orderedSynonyms = [...manualSearchSynonyms].sort((a, b) =>
     normalizeSearchText(b[0]).length - normalizeSearchText(a[0]).length

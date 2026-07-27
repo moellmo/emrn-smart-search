@@ -1,7 +1,7 @@
 import { after, NextRequest, NextResponse } from "next/server";
 import { typesenseAdmin, typesenseSearch } from "../../../lib/typesense";
 import { buildSmartSearchQuery } from "../../../lib/smart-search-translator";
-import { buildNaturalLanguageSearchPlan } from "../../../lib/natural-language-search";
+import { buildNaturalLanguageSearchPlan, type NaturalLanguageSearchPlan } from "../../../lib/natural-language-search";
 import { normalizeSearchText } from "../../../lib/search-language";
 import { applyBrandQueryRanking, applyHiddenSkuFilter, applyIntentRanking, applyPinnedSkuRanking, applyPrivateCategoryFilter } from "../../../lib/search-ranking";
 import { balanceHitsByProductFamily, productFamilyKey } from "../../../lib/search-result-balancing";
@@ -169,6 +169,223 @@ function diversifyAutocompleteHits(hits: any[] = [], naturalLanguagePlan: { acti
   }
 
   return selected;
+}
+
+function emptyAutocompleteNaturalLanguagePlan(query: string): NaturalLanguageSearchPlan {
+  return {
+    active: false,
+    source: "none",
+    normalized_query: query,
+    category_queries: [],
+    recall_queries: [],
+    rewritten_query: "",
+    avoid_terms: [],
+    suggested_query: "",
+    confidence: 0,
+    ai_status: "not_needed",
+  };
+}
+
+function isFocusedAutocompleteQuery(query: string) {
+  const normalized = normalizeSearchText(query);
+  if (!normalized || normalized === "*") return false;
+
+  const broadPhrases = [
+    "clinic supplies",
+    "clinic supply",
+    "doctor office supplies",
+    "medical office supplies",
+    "hospital supplies",
+    "nursing supplies",
+    "ems supplies",
+    "first responder supplies",
+    "wound supplies",
+    "wound care stuff",
+    "wound care supplies",
+    "checking ears",
+    "look inside ears",
+    "fournitures clinique",
+    "fournitures de clinique",
+    "materiel clinique",
+    "matériel clinique",
+    "fournitures cabinet medical",
+    "fournitures cabinet médical",
+    "fournitures hopital",
+    "fournitures hôpital",
+    "fournitures soins infirmiers",
+    "fournitures ems",
+    "fournitures soins plaies",
+    "materiel soins plaies",
+    "matériel soins plaies",
+  ];
+  if (broadPhrases.some((phrase) => normalized.includes(normalizeSearchText(phrase)))) return false;
+  if (/\b(supplies|supply|stuff|things|equipment|products|items|fournitures|materiel|matériel)\b/.test(normalized)) return false;
+
+  const focusedTerms = [
+    "oxygen mask",
+    "oxygen masks",
+    "masque oxygene",
+    "masque oxygène",
+    "masques oxygene",
+    "masques oxygène",
+    "masque d oxygene",
+    "masque d oxygène",
+    "masque d’oxygène",
+    "non rebreather",
+    "non-rebreather",
+    "masque avec reservoir",
+    "masque avec réservoir",
+    "bag valve mask",
+    "ballon masque",
+    "sac ambu",
+    "bvm",
+    "oximeter",
+    "oximeters",
+    "oxymeter",
+    "oxymeters",
+    "pulse oximeter",
+    "pulse ox",
+    "spo2",
+    "spo2 monitor",
+    "oximetre",
+    "oximètre",
+    "saturometre",
+    "saturomètre",
+    "stethoscope",
+    "stetoscope",
+    "stethascope",
+    "otoscope",
+    "otoscop",
+    "glove",
+    "gloves",
+    "gants",
+    "mask",
+    "masks",
+    "masque",
+    "masques",
+    "n95",
+    "syringe",
+    "syringes",
+    "seringue",
+    "seringues",
+    "needle",
+    "needles",
+    "aiguille",
+    "aiguilles",
+    "sharps container",
+    "wound dressing",
+    "pansement",
+    "pansements",
+    "gauze",
+    "gaze",
+    "bandage",
+    "thermometer",
+    "thermometre",
+    "thermomètre",
+    "blood pressure cuff",
+    "bp cuff",
+    "brassard",
+    "tensiometre",
+    "tensiomètre",
+    "catheter",
+    "cathéter",
+    "aed pads",
+    "electrode",
+    "electrodes",
+  ];
+  if (focusedTerms.some((term) => normalized.includes(normalizeSearchText(term)))) return true;
+
+  const words = normalized.split(/\s+/).filter(Boolean);
+  return words.length <= 2;
+}
+
+function withAutocompleteTimeout<T>(promise: Promise<T>, timeoutMs = 650): Promise<T | null> {
+  return Promise.race([
+    promise,
+    new Promise<null>((resolve) => setTimeout(() => resolve(null), timeoutMs)),
+  ]);
+}
+
+function compactAutocompleteQuery(originalQuery: string, naturalLanguagePlan: NaturalLanguageSearchPlan, smartSearchQuery: string) {
+  const normalized = normalizeSearchText(originalQuery);
+  if ([
+    "masque oxygene",
+    "masque oxygène",
+    "masques oxygene",
+    "masques oxygène",
+    "masque d oxygene",
+    "masque d oxygène",
+    "masque d’oxygène",
+  ].some((term) => normalized.includes(normalizeSearchText(term)))) {
+    return "oxygen masks aerosol mask oxygen therapy mask non-rebreather mask adult pediatric";
+  }
+
+  if (!naturalLanguagePlan.active) return smartSearchQuery;
+  return [
+    originalQuery,
+    ...(naturalLanguagePlan.recall_queries || []).slice(0, 4),
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 180);
+}
+
+function isOxygenMaskAutocompleteQuery(query: string) {
+  const normalized = normalizeSearchText(query);
+  return [
+    "oxygen mask",
+    "oxygen masks",
+    "masque oxygene",
+    "masque oxygène",
+    "masques oxygene",
+    "masques oxygène",
+    "masque d oxygene",
+    "masque d oxygène",
+    "masque d’oxygène",
+  ].some((term) => normalized.includes(normalizeSearchText(term)));
+}
+
+function applyAutocompleteOxygenMaskRanking(hits: any[] = [], query: string) {
+  if (!isOxygenMaskAutocompleteQuery(query)) return hits;
+
+  const preferred = [
+    "aerosol mask",
+    "oxygen mask",
+    "oxygen masks",
+    "oxygen therapy mask",
+    "non-rebreather",
+    "non rebreather",
+    "high concentration",
+    "medium concentration",
+    "air cushion disposable masks",
+    "air soft mask",
+    "mask with tubing",
+    "nebulizer mask",
+  ];
+  const genericFaceMasks = [
+    "n95",
+    "kn95",
+    "particulate respirator",
+    "respirator",
+    "procedure mask",
+    "surgical mask",
+    "face mask",
+    "paper face mask",
+    "earloop",
+  ];
+
+  const score = (hit: any) => {
+    const doc = hit?.document || {};
+    const name = normalizeSearchText([doc.name, doc.parent_name, doc.variant_label, doc.option_text].filter(Boolean).join(" "));
+    let value = 0;
+    if (preferred.some((term) => name.includes(normalizeSearchText(term)))) value += 1000;
+    if (genericFaceMasks.some((term) => name.includes(normalizeSearchText(term)))) value -= 1200;
+    return value;
+  };
+
+  return [...hits].sort((a, b) => score(b) - score(a));
 }
 
 async function ensureSearchAnalyticsCollection() {
@@ -420,9 +637,11 @@ export async function GET(req: NextRequest) {
   }
 
   const controls = await getEffectiveSearchOverrides();
-  const naturalLanguagePlan = await buildNaturalLanguageSearchPlan(q, controls);
+  const naturalLanguagePlan = isFocusedAutocompleteQuery(q)
+    ? emptyAutocompleteNaturalLanguagePlan(q)
+    : await buildNaturalLanguageSearchPlan(q, controls);
   const smartQuery = await buildSmartSearchQuery(q, { skipOpenAI: naturalLanguagePlan.active && naturalLanguagePlan.source === "manual" });
-  const primaryQuery = naturalLanguagePlan.active ? naturalLanguagePlan.rewritten_query || smartQuery.search_query : smartQuery.search_query;
+  const primaryQuery = compactAutocompleteQuery(q, naturalLanguagePlan, smartQuery.search_query);
 
   const results: any = await typesenseSearch
     .collections(COLLECTION_NAME)
@@ -444,9 +663,30 @@ export async function GET(req: NextRequest) {
   const supplementalSearches: Promise<any>[] = [];
   const pinnedSkus = getPinnedSkusForQuery(q, controls);
 
+  if (isOxygenMaskAutocompleteQuery(q)) {
+    supplementalSearches.push(
+      withAutocompleteTimeout(typesenseSearch
+        .collections(COLLECTION_NAME)
+        .documents()
+        .search({
+          q: "oxygen masks",
+          query_by: "sku,all_skus,name,parent_name,brand,sold_by,categories,variant_label,option_text,search_text",
+          query_by_weights: "30,24,16,12,8,7,6,5,5,3",
+          filter_by: "is_visible:=true",
+          facet_by: "brand,categories",
+          max_facet_values: 16,
+          per_page: 16,
+          num_typos: 1,
+          typo_tokens_threshold: 1,
+          prefix: true,
+          highlight_full_fields: "name,parent_name,categories,variant_label,option_text",
+        }))
+    );
+  }
+
   for (const sku of pinnedSkus.slice(0, 12)) {
     supplementalSearches.push(
-      typesenseSearch
+      withAutocompleteTimeout(typesenseSearch
         .collections(COLLECTION_NAME)
         .documents()
         .search({
@@ -459,13 +699,13 @@ export async function GET(req: NextRequest) {
           per_page: 4,
           num_typos: 0,
           prefix: false,
-        })
+        }))
     );
   }
 
   if (isAedUnitQuery(q)) {
     supplementalSearches.push(
-      typesenseSearch
+      withAutocompleteTimeout(typesenseSearch
         .collections(COLLECTION_NAME)
         .documents()
         .search({
@@ -475,7 +715,7 @@ export async function GET(req: NextRequest) {
           facet_by: "brand,categories",
           max_facet_values: 16,
           per_page: 28,
-        })
+        }))
     );
   }
 
@@ -484,11 +724,11 @@ export async function GET(req: NextRequest) {
       ...(naturalLanguagePlan.category_queries || []),
       ...categoryFacetNamesForQuery(results, q, smartQuery.search_query),
     ])
-  ).slice(0, 8);
+  ).slice(0, naturalLanguagePlan.active ? 3 : 6);
 
   for (const categoryName of categoryNames) {
     supplementalSearches.push(
-      typesenseSearch
+      withAutocompleteTimeout(typesenseSearch
         .collections(COLLECTION_NAME)
         .documents()
         .search({
@@ -498,7 +738,7 @@ export async function GET(req: NextRequest) {
           facet_by: "brand,categories",
           max_facet_values: 16,
           per_page: 28,
-        })
+        }))
     );
   }
 
@@ -507,11 +747,11 @@ export async function GET(req: NextRequest) {
       ...(naturalLanguagePlan.recall_queries || []),
       ...autocompleteRecallQueries(q, smartQuery.search_query),
     ])
-  ).slice(0, 10);
+  ).slice(0, naturalLanguagePlan.active ? 3 : 6);
 
   for (const recallQuery of recallQueries) {
     supplementalSearches.push(
-      typesenseSearch
+      withAutocompleteTimeout(typesenseSearch
         .collections(COLLECTION_NAME)
         .documents()
         .search({
@@ -526,13 +766,13 @@ export async function GET(req: NextRequest) {
           typo_tokens_threshold: 1,
           prefix: true,
           highlight_full_fields: "name,parent_name,categories,variant_label,option_text",
-        })
+        }))
     );
   }
 
   if (isLikelyBrandQuery(q)) {
     supplementalSearches.push(
-      typesenseSearch
+      withAutocompleteTimeout(typesenseSearch
         .collections(COLLECTION_NAME)
         .documents()
         .search({
@@ -547,7 +787,7 @@ export async function GET(req: NextRequest) {
           typo_tokens_threshold: 1,
           prefix: true,
           highlight_full_fields: "brand",
-        })
+        }))
     );
   }
 
@@ -571,7 +811,7 @@ export async function GET(req: NextRequest) {
     q
   );
   const hits = applyPinnedSkuRanking(
-    diversifyAutocompleteHits(rankedHits, naturalLanguagePlan),
+    applyAutocompleteOxygenMaskRanking(diversifyAutocompleteHits(rankedHits, naturalLanguagePlan), q),
     q,
     controls
   );
