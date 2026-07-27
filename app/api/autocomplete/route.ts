@@ -4,7 +4,7 @@ import { buildSmartSearchQuery } from "../../../lib/smart-search-translator";
 import { buildNaturalLanguageSearchPlan } from "../../../lib/natural-language-search";
 import { normalizeSearchText } from "../../../lib/search-language";
 import { applyBrandQueryRanking, applyHiddenSkuFilter, applyIntentRanking, applyPinnedSkuRanking, applyPrivateCategoryFilter } from "../../../lib/search-ranking";
-import { balanceHitsByProductFamily } from "../../../lib/search-result-balancing";
+import { balanceHitsByProductFamily, productFamilyKey } from "../../../lib/search-result-balancing";
 import { getEffectiveSearchOverrides, getPinnedSkusForQuery } from "../../../lib/search-overrides";
 import { PRODUCT_COLLECTION_ALIAS } from "../../../lib/search-index";
 import { STORE_URL, absoluteStoreUrl } from "../../../lib/store-url";
@@ -110,6 +110,65 @@ function mergeHits(...groups: any[][]) {
   }
 
   return merged;
+}
+
+function productParentKey(hit: any) {
+  const doc = hit?.document || {};
+  return normalizeSearchText(String(doc.parent_name || doc.name || doc.product_id || doc.sku || ""));
+}
+
+function preferredAutocompleteFamilies(categoryQueries: string[] = [], recallQueries: string[] = []) {
+  const text = normalizeSearchText([...categoryQueries, ...recallQueries].join(" "));
+  const preferred = [
+    ["gloves", ["glove", "gloves"]],
+    ["masks", ["mask", "masks", "ppe", "infection control"]],
+    ["diagnostic-ear", ["otoscope", "ear", "diagnostic"]],
+    ["diagnostic-heart", ["stethoscope", "diagnostic"]],
+    ["diagnostic-vitals", ["thermometer", "oximeter", "pulse oximeter", "diagnostic", "patient monitor"]],
+    ["wound-dressings", ["wound", "dressing", "gauze", "bandage"]],
+    ["sharps", ["sharp", "sharps"]],
+    ["needles-syringes", ["needle", "syringe"]],
+    ["first-aid", ["first aid", "trauma"]],
+    ["infection-control", ["alcohol", "swab", "wipe", "infection control"]],
+  ] as Array<[string, string[]]>;
+
+  return preferred
+    .filter(([, signals]) => signals.some((signal) => text.includes(normalizeSearchText(signal))))
+    .map(([family]) => family);
+}
+
+function diversifyAutocompleteHits(hits: any[] = [], naturalLanguagePlan: { active?: boolean; category_queries?: string[]; recall_queries?: string[] }) {
+  if (!naturalLanguagePlan.active || hits.length < 4) return hits;
+
+  const balanced = balanceHitsByProductFamily(hits, 48);
+  const preferredFamilies = preferredAutocompleteFamilies(naturalLanguagePlan.category_queries || [], naturalLanguagePlan.recall_queries || []);
+  const parentCounts = new Map<string, number>();
+  const familyCounts = new Map<string, number>();
+
+  const score = (hit: any, index: number) => {
+    const family = productFamilyKey(hit);
+    const preferredIndex = preferredFamilies.indexOf(family);
+    let value = 10000 - index;
+    if (preferredIndex >= 0) value += 5000 - preferredIndex * 250;
+    value -= (familyCounts.get(family) || 0) * 1600;
+    value -= (parentCounts.get(productParentKey(hit)) || 0) * 2600;
+    return value;
+  };
+
+  const remaining = balanced.map((hit, index) => ({ hit, index }));
+  const selected: any[] = [];
+
+  while (remaining.length && selected.length < balanced.length) {
+    remaining.sort((a, b) => score(b.hit, b.index) - score(a.hit, a.index));
+    const next = remaining.shift()!;
+    selected.push(next.hit);
+    const family = productFamilyKey(next.hit);
+    const parent = productParentKey(next.hit);
+    familyCounts.set(family, (familyCounts.get(family) || 0) + 1);
+    parentCounts.set(parent, (parentCounts.get(parent) || 0) + 1);
+  }
+
+  return selected;
 }
 
 async function ensureSearchAnalyticsCollection() {
@@ -512,7 +571,7 @@ export async function GET(req: NextRequest) {
     q
   );
   const hits = applyPinnedSkuRanking(
-    naturalLanguagePlan.active ? balanceHitsByProductFamily(rankedHits, 32) : rankedHits,
+    diversifyAutocompleteHits(rankedHits, naturalLanguagePlan),
     q,
     controls
   );

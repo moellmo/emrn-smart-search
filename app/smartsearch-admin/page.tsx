@@ -213,6 +213,7 @@ export default function SmartSearchAdminPage() {
       return "";
     }
   });
+  const [showNaturalLanguageJson, setShowNaturalLanguageJson] = useState(false);
   const [bulkRules, setBulkRules] = useState("");
   const [twoWaySynonyms, setTwoWaySynonyms] = useState(true);
   const [reindexStatus, setReindexStatus] = useState<ReindexStatus | null>(null);
@@ -396,6 +397,22 @@ export default function SmartSearchAdminPage() {
     };
     setNaturalLanguageRulesJson(formatNaturalLanguageRules(rules));
     setNaturalRuleTestStatus(`Rule ready for "${phrase}". Click Save all controls to publish it.`);
+  }
+
+  function loadNaturalLanguageRuleIntoBuilder(phrase: string, rule: NaturalLanguageRule) {
+    setNaturalRulePhrase(phrase);
+    setNaturalRuleCategories(joinCsv(rule.categoryQueries || []));
+    setNaturalRuleTerms(joinCsv(rule.recallQueries || []));
+    setNaturalRuleAvoid(joinCsv(rule.avoidTerms || []));
+    setNaturalRuleTestStatus(`Loaded "${phrase}". Edit the form, then Add / update rule and Save all controls.`);
+  }
+
+  function fillClinicRuleExample() {
+    setNaturalRulePhrase("clinic supplies");
+    setNaturalRuleCategories("Nursing Supplies, Diagnostics, Wound Care, PPE & Infection Control, Needles & Syringes, First Aid Kits & Supplies");
+    setNaturalRuleTerms("exam gloves, masks, otoscope, stethoscope, wound dressing, sharps container, syringe, first aid kit");
+    setNaturalRuleAvoid("office binder, copy paper, marker");
+    setNaturalRuleTestStatus("Example loaded. Test it, then Add / update rule and Save all controls.");
   }
 
   async function testNaturalLanguageRule() {
@@ -1052,18 +1069,32 @@ export default function SmartSearchAdminPage() {
                 <button type="button" onClick={() => void testNaturalLanguageRule()} style={outlineButtonStyle}>
                   Test autocomplete
                 </button>
+                <button type="button" onClick={fillClinicRuleExample} style={outlineButtonStyle}>
+                  Load clinic example
+                </button>
                 {naturalRuleTestStatus ? <span style={{ color: /found|ready/i.test(naturalRuleTestStatus) ? "#166534" : "#b91c1c", fontWeight: 800 }}>{naturalRuleTestStatus}</span> : null}
               </div>
             </div>
-            <textarea
-              value={naturalLanguageRulesJson}
-              onChange={(event) => setNaturalLanguageRulesJson(event.target.value)}
-              placeholder={'{\n  "clinic supplies": {\n    "categoryQueries": ["Nursing Supplies", "Diagnostics", "Wound Care"],\n    "recallQueries": ["exam gloves", "otoscope", "blood pressure cuff"],\n    "avoidTerms": ["office binder", "copy paper"]\n  }\n}'}
-              style={{ ...textareaStyle, minHeight: 260, fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", fontSize: 13 }}
+            <SavedNaturalLanguageRules
+              rules={parseNaturalLanguageRulesJson(naturalLanguageRulesJson)}
+              onLoad={loadNaturalLanguageRuleIntoBuilder}
             />
-            <p style={{ margin: "10px 0 0", color: validateNaturalLanguageRulesJson(naturalLanguageRulesJson) ? "#166534" : "#b91c1c", fontWeight: 800 }}>
-              {validateNaturalLanguageRulesJson(naturalLanguageRulesJson) ? "JSON is valid." : "JSON has an error."}
-            </p>
+            <button type="button" onClick={() => setShowNaturalLanguageJson(!showNaturalLanguageJson)} style={{ ...outlineButtonStyle, marginTop: 12 }}>
+              {showNaturalLanguageJson ? "Hide JSON editor" : "Show JSON editor"}
+            </button>
+            {showNaturalLanguageJson ? (
+              <>
+                <textarea
+                  value={naturalLanguageRulesJson}
+                  onChange={(event) => setNaturalLanguageRulesJson(event.target.value)}
+                  placeholder={'{\n  "clinic supplies": {\n    "categoryQueries": ["Nursing Supplies", "Diagnostics", "Wound Care"],\n    "recallQueries": ["exam gloves", "otoscope", "blood pressure cuff"],\n    "avoidTerms": ["office binder", "copy paper"]\n  }\n}'}
+                  style={{ ...textareaStyle, minHeight: 220, marginTop: 10, fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", fontSize: 13 }}
+                />
+                <p style={{ margin: "10px 0 0", color: validateNaturalLanguageRulesJson(naturalLanguageRulesJson) ? "#166534" : "#b91c1c", fontWeight: 800 }}>
+                  {validateNaturalLanguageRulesJson(naturalLanguageRulesJson) ? "JSON is valid." : "JSON has an error."}
+                </p>
+              </>
+            ) : null}
           </Panel>
 
           <Panel title="No-Results Suggestions" help="Suggestions to show when a search has no results.">
@@ -1138,6 +1169,50 @@ function SavedRules({
         </>
       ) : (
         <p style={{ color: "#64748b", margin: 0 }}>{emptyText}</p>
+      )}
+    </div>
+  );
+}
+
+function SavedNaturalLanguageRules({
+  rules = {},
+  onLoad,
+}: {
+  rules?: Record<string, NaturalLanguageRule>;
+  onLoad: (phrase: string, rule: NaturalLanguageRule) => void;
+}) {
+  const rows = Object.entries(rules || {}).sort(([a], [b]) => a.localeCompare(b));
+  const [showAll, setShowAll] = useState(false);
+  const visibleRows = showAll ? rows : rows.slice(0, 6);
+
+  return (
+    <div style={{ marginTop: 14, border: "1px solid #e5e7eb", borderRadius: 14, background: "#fff", padding: 12 }}>
+      <h3 style={{ margin: "0 0 10px", fontSize: 15, color: "#111827" }}>
+        Saved natural-language rules{rows.length ? ` (${rows.length})` : ""}
+      </h3>
+      {rows.length ? (
+        <>
+          <div style={{ display: "grid", gap: 8, maxHeight: showAll ? 320 : "none", overflow: showAll ? "auto" : "visible" }}>
+            {visibleRows.map(([phrase, rule]) => (
+              <div key={phrase} style={{ display: "grid", gridTemplateColumns: "180px 1fr auto", gap: 10, padding: 10, border: "1px solid #e2e8f0", borderRadius: 12, background: "#f8fafc", alignItems: "start" }}>
+                <strong style={{ color: "#14365d", overflowWrap: "anywhere" }}>{phrase}</strong>
+                <div style={{ color: "#334155", fontSize: 13, lineHeight: 1.45, overflowWrap: "anywhere" }}>
+                  <div><b>Categories:</b> {(rule.categoryQueries || []).join(", ") || "none"}</div>
+                  <div><b>Product terms:</b> {(rule.recallQueries || []).join(", ") || "none"}</div>
+                  {(rule.avoidTerms || []).length ? <div><b>Avoid:</b> {(rule.avoidTerms || []).join(", ")}</div> : null}
+                </div>
+                <button type="button" onClick={() => onLoad(phrase, rule)} style={smallActionButtonStyle}>Edit</button>
+              </div>
+            ))}
+          </div>
+          {rows.length > visibleRows.length || showAll ? (
+            <button type="button" onClick={() => setShowAll(!showAll)} style={{ ...outlineButtonStyle, marginTop: 10 }}>
+              {showAll ? "Show fewer" : `View all ${rows.length} saved rules`}
+            </button>
+          ) : null}
+        </>
+      ) : (
+        <p style={{ color: "#64748b", margin: 0 }}>No saved natural-language rules yet. Use the form above to add one.</p>
       )}
     </div>
   );

@@ -271,6 +271,42 @@ const manualIntentPlans: IntentPlan[] = [
     categoryQueries: ["Otoscope & Ear Specula Tips", "Diagnostics"],
     recallQueries: ["otoscope", "ear specula", "ear speculum", "diagnostic otoscope"],
   },
+  {
+    match: [
+      "oximeter",
+      "oximeters",
+      "oxymeter",
+      "oxymeters",
+      "pulse oximeter",
+      "pulse ox",
+      "spo2 monitor",
+      "spo2",
+      "oxygen monitor",
+      "oxygen saturation monitor",
+      "oximetre",
+      "oximètre",
+      "saturometre",
+      "saturomètre",
+      "moniteur spo2",
+    ],
+    categoryQueries: [
+      "Pulse Oximeters",
+      "Diagnostics",
+      "Patient Monitors & Accessories",
+      "Patient Monitors",
+      "Veterinary Supplies",
+    ],
+    recallQueries: [
+      "pulse oximeter",
+      "finger pulse oximeter",
+      "SpO2 monitor",
+      "oxygen saturation monitor",
+      "vital signs monitor",
+      "patient monitor",
+      "veterinary pulse oximeter",
+    ],
+    avoidTerms: ["oxygen mask", "oxygen cylinder", "oxygen regulator"],
+  },
 ];
 
 function cleanQuery(query: string, maxLength = 180) {
