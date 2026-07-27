@@ -24,6 +24,14 @@ export const manualSearchSynonyms: Array<[string, string[]]> = [
   ["medic bag", ["medical bag", "trauma bag", "oxygen bag", "ems bag"]],
   ["patient monitors", ["patient monitors", "vital signs monitors", "bedside monitors", "multi-parameter monitors"]],
   ["patient monitor", ["patient monitor", "vital signs monitor", "bedside monitor", "multi-parameter monitor"]],
+  ["heart reate", ["heart rate monitor", "patient monitor", "vital signs monitor", "ECG monitor"]],
+  ["heart reate machine", ["heart rate monitor", "patient monitor", "vital signs monitor", "ECG monitor"]],
+  ["heart rate", ["heart rate monitor", "patient monitor", "vital signs monitor", "ECG monitor"]],
+  ["heart rate machine", ["heart rate monitor", "patient monitor", "vital signs monitor", "ECG monitor"]],
+  ["heart monitor", ["heart rate monitor", "patient monitor", "vital signs monitor", "ECG monitor"]],
+  ["cardiac monitor", ["heart rate monitor", "patient monitor", "vital signs monitor", "ECG monitor"]],
+  ["moniteur cardiaque", ["heart rate monitor", "patient monitor", "vital signs monitor", "ECG monitor"]],
+  ["moniteurs cardiaques", ["heart rate monitors", "patient monitors", "vital signs monitors", "ECG monitors"]],
   ["masks", ["masks", "face masks", "n95 masks", "n95 respirators", "respirators", "oxygen masks", "procedure face masks"]],
   ["mask", ["mask", "masks", "face mask", "n95 mask", "respirator", "oxygen mask"]],
   ["gants", ["gloves", "medical gloves", "exam gloves", "nitrile gloves", "surgical gloves"]],
@@ -142,6 +150,10 @@ export const manualSearchSynonyms: Array<[string, string[]]> = [
   ["otoscop", ["otoscope"]],
   ["ophtalmoscope", ["ophthalmoscope"]],
   ["ophtalmoscopes", ["ophthalmoscopes"]],
+  ["oximeter", ["pulse oximeter", "oximeter"]],
+  ["oximeters", ["pulse oximeters", "oximeters"]],
+  ["oxymeter", ["pulse oximeter", "oximeter"]],
+  ["oxymeters", ["pulse oximeters", "oximeters"]],
   ["oxymetre", ["pulse oximeter", "oximeter"]],
   ["oxymètre", ["pulse oximeter", "oximeter"]],
   ["oxymetre de pouls", ["pulse oximeter", "oximeter"]],
@@ -264,6 +276,8 @@ export const manualSearchSynonyms: Array<[string, string[]]> = [
   ["sac ambu", ["bag valve mask", "bvm", "resuscitator"]],
   ["ballon masque", ["bag valve mask", "bvm", "resuscitator"]],
   ["ballon autoremplisseur", ["bag valve mask", "bvm", "resuscitator"]],
+  ["bag valve mask", ["bag valve mask", "BVM", "manual resuscitator", "resuscitator"]],
+  ["bag valve masks", ["bag valve masks", "BVM", "manual resuscitator", "resuscitator"]],
   ["masque de poche", ["pocket mask", "CPR pocket mask"]],
   ["bvm de poche", ["pocket BVM", "bag valve mask", "BVM"]],
   ["aspiration", ["suction", "suction catheter", "suction unit"]],
@@ -272,6 +286,13 @@ export const manualSearchSynonyms: Array<[string, string[]]> = [
   ["voie aérienne", ["airway", "airway management"]],
   ["canule nasale", ["nasal cannula"]],
   ["nasal", ["nasal", "nasal cannula"]],
+  ["nasal cannula", ["nasal cannula", "oxygen cannula"]],
+  ["nasel cannula", ["nasal cannula", "oxygen cannula"]],
+  ["nasal canula", ["nasal cannula", "oxygen cannula"]],
+  ["nasel canula", ["nasal cannula", "oxygen cannula"]],
+  ["line onner cannula", ["nasal cannula", "oxygen cannula"]],
+  ["liner cannula", ["nasal cannula", "oxygen cannula"]],
+  ["oxygen cannula", ["oxygen cannula", "nasal cannula"]],
   ["epipen", ["epipen", "epinephrine auto injector"]],
   ["epi pen", ["epipen", "epinephrine auto injector"]],
   ["epinephrine", ["epinephrine", "epipen"]],
@@ -387,7 +408,25 @@ export const manualSearchSynonyms: Array<[string, string[]]> = [
   ["demo dose", ["Demo Dose", "training", "simulation"]],
   ["mad300", ["MAD300", "mucosal atomization device"]],
   ["lma", ["LMA", "laryngeal mask airway"]],
-  ["ecg", ["ECG", "electrodes", "ECG paper"]],
+  ["ecg", ["ECG machine", "EKG machine", "ECG monitor", "electrocardiograph", "resting ECG", "SE-1200", "SE-1202", "SE-301", "patient monitor", "vital signs monitor"]],
+  ["ekg", ["EKG machine", "ECG machine", "ECG monitor", "electrocardiograph", "resting ECG", "SE-1200", "SE-1202", "SE-301", "patient monitor", "vital signs monitor"]],
+  ["ecg machine", ["ECG machine", "ECG monitor", "electrocardiograph"]],
+  ["ekg machine", ["EKG machine", "ECG machine", "electrocardiograph"]],
+  ["machine ecg", ["ECG machine", "ECG monitor", "electrocardiograph"]],
+  ["moniteur ecg", ["ECG monitor", "ECG machine", "patient monitor"]],
+  ["electrocardiographe", ["ECG machine", "ECG monitor", "electrocardiograph"]],
+  ["électrocardiographe", ["ECG machine", "ECG monitor", "electrocardiograph"]],
+  ["ecg paper", ["ECG paper", "recording paper"]],
+  ["ekg paper", ["ECG paper", "recording paper"]],
+  ["ecg electrode", ["ECG electrode", "monitoring electrode"]],
+  ["ecg electrodes", ["ECG electrodes", "monitoring electrodes"]],
+  ["ekg electrode", ["EKG electrode", "monitoring electrode"]],
+  ["ekg electrodes", ["EKG electrodes", "monitoring electrodes"]],
+  ["ecg lead", ["ECG leadwire", "ECG cable"]],
+  ["ecg leads", ["ECG leadwire", "ECG cable"]],
+  ["ecg cable", ["ECG cable", "ECG leadwire"]],
+  ["ecg bag", ["ECG carrying bag"]],
+  ["ecg software", ["ECG viewer software"]],
   ["vacutainer", ["Vacutainer", "blood collection"]],
   ["bodi white", ["body white", "body"]],
   ["bodi wheel", ["body wheel", "wheelchair"]],
@@ -471,7 +510,8 @@ const frenchSignals = [
   "plaie", "plaies", "soin", "soins", "bacteriostatique", "bactériostatique",
   "hemostatique", "hémostatique", "endotracheal", "endotrachéal", "nebuliseur",
   "nébuliseur", "regulateur", "régulateur", "biopsie", "spéculum", "compresse froide",
-  "bloc froid", "poinçon", "poincon", "civière", "civiere", "brancard", "brancards"
+  "bloc froid", "poinçon", "poincon", "civière", "civiere", "brancard", "brancards",
+  "electrocardiographe", "électrocardiographe", "moniteur ecg", "machine ecg"
 ];
 
 export function detectQueryLanguage(query: string): LanguageCode {
@@ -504,12 +544,33 @@ export function expandSearchQuery(query: string) {
     };
   }
 
+  const hasEcgAccessoryIntent = [
+    "accessory",
+    "accessories",
+    "paper",
+    "recording paper",
+    "thermal paper",
+    "electrode",
+    "electrodes",
+    "lead",
+    "leads",
+    "leadwire",
+    "lead wire",
+    "cable",
+    "bag",
+    "software",
+    "viewer",
+  ].some((term) => matchesNormalizedTerm(normalized, normalizeSearchText(term)));
+
   const orderedSynonyms = [...manualSearchSynonyms].sort((a, b) =>
     normalizeSearchText(b[0]).length - normalizeSearchText(a[0]).length
   );
 
   for (const [term, synonyms] of orderedSynonyms) {
     const normalizedTerm = normalizeSearchText(term);
+    if (hasEcgAccessoryIntent && (normalizedTerm === "ecg" || normalizedTerm === "ekg")) {
+      continue;
+    }
     if (matchedTerms.some((matchedTerm) => matchedTerm !== normalizedTerm && matchedTerm.includes(normalizedTerm))) {
       continue;
     }

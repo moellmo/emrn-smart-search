@@ -59,6 +59,11 @@ export const defaultSearchOverrides: SearchOverrides = {
     "fauteuil de douche": [],
     "cat tourniquet": ["30001OR", "30001NO", "30001BL"],
     "combat application tourniquet": ["30001OR", "30001NO", "30001BL"],
+    "bag valve mask": ["02FM5210-CS", "02RT1041", "004-4050", "004-4010F", "004-4010", "004-4025", "004-4025F", "004-4050F", "540-211-000", "845231", "845223", "845221", "845241", "845031", "MM-1056242"],
+    "bag valve masks": ["02FM5210-CS", "02RT1041", "004-4050", "004-4010F", "004-4010", "004-4025", "004-4025F", "004-4050F", "540-211-000", "845231", "845223", "845221", "845241", "845031", "MM-1056242"],
+    bvm: ["02FM5210-CS", "02RT1041", "004-4050", "004-4010F", "004-4010", "004-4025", "004-4025F", "004-4050F", "540-211-000", "845231", "845223", "845221", "845241", "845031", "MM-1056242"],
+    "ballon masque": ["02FM5210-CS", "02RT1041", "004-4050", "004-4010F", "004-4010", "004-4025", "004-4025F", "004-4050F", "540-211-000", "845231", "845223", "845221", "845241", "845031", "MM-1056242"],
+    "sac ambu": ["02FM5210-CS", "02RT1041", "004-4050", "004-4010F", "004-4010", "004-4025", "004-4025F", "004-4050F", "540-211-000", "845231", "845223", "845221", "845241", "845031", "MM-1056242"],
   },
   brandPinnedSkus: {},
   categoryPinnedSkus: {},
@@ -358,7 +363,12 @@ export function getPinnedSkusForQuery(query: string, controls = defaultSearchOve
     }
   }
 
-  matches
+  const exactMatches = matches.filter((match) => match.exact);
+  const activeMatches = exactMatches.length
+    ? exactMatches
+    : matches.filter((match) => match.term.length === Math.max(...matches.map((item) => item.term.length)));
+
+  activeMatches
     .sort((a, b) => {
       if (a.exact !== b.exact) return a.exact ? -1 : 1;
       return b.term.length - a.term.length;

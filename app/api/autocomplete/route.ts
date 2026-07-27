@@ -247,6 +247,17 @@ function isFocusedAutocompleteQuery(query: string) {
     "pulse ox",
     "spo2",
     "spo2 monitor",
+    "ecg",
+    "ekg",
+    "ecg machine",
+    "ekg machine",
+    "ecg monitor",
+    "ekg monitor",
+    "electrocardiograph",
+    "electrocardiographe",
+    "électrocardiographe",
+    "machine ecg",
+    "moniteur ecg",
     "oximetre",
     "oximètre",
     "saturometre",
@@ -287,6 +298,17 @@ function isFocusedAutocompleteQuery(query: string) {
     "brassard",
     "tensiometre",
     "tensiomètre",
+    "nasal cannula",
+    "nasal canula",
+    "oxygen cannula",
+    "canule nasale",
+    "blue phantom",
+    "stretcher",
+    "stretchers",
+    "brancard",
+    "brancards",
+    "civiere",
+    "civière",
     "catheter",
     "cathéter",
     "aed pads",
@@ -382,6 +404,74 @@ function applyAutocompleteOxygenMaskRanking(hits: any[] = [], query: string) {
     let value = 0;
     if (preferred.some((term) => name.includes(normalizeSearchText(term)))) value += 1000;
     if (genericFaceMasks.some((term) => name.includes(normalizeSearchText(term)))) value -= 1200;
+    return value;
+  };
+
+  return [...hits].sort((a, b) => score(b) - score(a));
+}
+
+function applyAutocompleteFocusedFamilyRanking(hits: any[] = [], query: string) {
+  const normalized = normalizeSearchText(query);
+  if (!normalized || /\b(supplies|supply|stuff|things|equipment|products|items|fournitures|materiel|matériel)\b/.test(normalized)) return hits;
+  const explicitAccessory = includesAny(normalized, ["accessory", "accessories", "replacement", "part", "parts", "paper", "electrode", "lead", "cable", "bag", "software", "viewer", "sensor", "probe", "strap", "straps"]);
+
+  const families = [
+    {
+      active: includesAny(normalized, ["patient monitor", "patient monitors", "patient monitoring", "vital signs monitor", "vital sign monitor", "vitals monitor", "heart rate", "heart reate", "heart monitor", "cardiac monitor", "heart rate machine", "moniteur cardiaque", "moniteur patient", "moniteur de patient", "moniteur de signes vitaux"]) && !explicitAccessory,
+      prefer: ["patient monitor", "vital signs monitor", "vital sign monitor", "bedside monitor", "spot monitor", "multiparameter monitor", "multi-parameter monitor", "heart rate monitor", "heart monitor", "cardiac monitor", "ecg monitor", "edan x10", "edan x12", "edan im3", "im50 patient monitor", "im60 patient monitor", "m3 vital signs", "m3a vital signs", "connex spot", "spot vital sign"],
+      demote: ["accessory", "accessories", "recording paper", "thermal paper", "electrode", "lead", "leadwire", "cable", "bag", "software", "viewer", "usb", "sentinel", "sensor", "probe", "cuff", "mount", "mounting", "stand", "holder", "bracket"],
+      force: 1100,
+    },
+    {
+      active: includesAny(normalized, ["ecg", "ekg", "ecg machine", "ekg machine", "ecg monitor", "ekg monitor", "electrocardiograph", "electrocardiographe", "électrocardiographe", "machine ecg", "moniteur ecg"]) && !explicitAccessory,
+      prefer: ["ecg machine", "ekg machine", "diagnostic ecg", "resting ecg", "resting ekg", "electrocardiograph", "edan se", "se-1200", "se1200", "se-1201", "se1201", "se-1202", "se1202", "se-301", "se301", "se-601", "se601", "se-1515", "se1515"],
+      demote: ["accessory", "accessories", "recording paper", "thermal paper", "electrode", "lead", "leadwire", "cable", "bag", "pouch", "case", "software", "viewer", "usb", "sentinel", "mount", "mounting", "stand", "holder", "bracket"],
+      force: 1400,
+    },
+    {
+      active: includesAny(normalized, ["bag valve mask", "bag valve masks", "bvm", "ambu bag", "sac ambu", "ballon masque", "ballon autoremplisseur"]),
+      prefer: ["bag-valve-mask", "bag valve mask", "bvm", "manual resuscitator", "resuscitator", "ambu bag"],
+      demote: ["n95", "kn95", "procedure mask", "surgical mask", "face mask", "paper face mask", "respirator", "earloop"],
+      force: 1200,
+    },
+    {
+      active: includesAny(normalized, ["blood pressure cuff", "bp cuff", "brassard", "brassard de tension"]),
+      prefer: ["blood pressure cuff", "bp cuff", "sphygmomanometer", "one piece cuffs", "flexiport blood pressure cuff"],
+      demote: ["replacement", "training", "trainer", "manikin", "simulator", "assembly"],
+      force: 800,
+    },
+    {
+      active: includesAny(normalized, ["blue phantom"]),
+      prefer: ["blue phantom"],
+      demote: ["refill", "refill fluid", "fluid", "gel"],
+      force: 900,
+    },
+    {
+      active: includesAny(normalized, ["oximeter", "oximeters", "oxymeter", "oxymeters", "pulse oximeter", "pulse ox", "spo2 monitor", "oximetre", "oximètre"]),
+      prefer: ["pulse oximeter", "finger pulse oximeter", "fingertip pulse oximeter", "spo2 deluxe pulse oximeter", "co-oximeter", "oximeter"],
+      demote: ["accessory", "accessories", "sensor", "probe", "cable"],
+      force: 700,
+    },
+    {
+      active: includesAny(normalized, ["nasal cannula", "nasal canula", "oxygen cannula", "canule nasale", "line onner cannula", "liner cannula"]),
+      prefer: ["nasal cannula", "oxygen nasal cannula", "oxygen cannula", "cannula"],
+      demote: ["catheter", "dressing", "wipe", "prep", "sodium chloride"],
+      force: 650,
+    },
+  ].filter((family) => family.active);
+  if (!families.length) return hits;
+
+  const score = (hit: any) => {
+    const doc = hit.document || {};
+    const name = normalizeSearchText([doc.name, doc.parent_name, doc.variant_label, doc.option_text].filter(Boolean).join(" "));
+    const looseName = name.replace(/[./-]/g, " ");
+    let value = 0;
+    for (const family of families) {
+      const prefer = family.prefer.some((term) => name.includes(normalizeSearchText(term)) || looseName.includes(normalizeSearchText(term).replace(/[./-]/g, " ")));
+      const demote = family.demote.some((term) => name.includes(normalizeSearchText(term)) || looseName.includes(normalizeSearchText(term).replace(/[./-]/g, " ")));
+      if (prefer && !demote) value += family.force;
+      if (demote) value -= family.force;
+    }
     return value;
   };
 
@@ -603,11 +693,24 @@ function autocompleteRecallQueries(originalQuery: string, translatedQuery: strin
   if (includesAny(query, ["oxygen mask", "oxygen masks", "masque oxygene", "masque oxygène", "masque d oxygene", "masque d’oxygène", "masques oxygene", "masques oxygène"])) {
     add("oxygen mask", "oxygen masks", "non-rebreather mask", "high concentration oxygen mask");
   }
-  if (includesAny(query, ["patient monitor", "patient monitors", "patient monitoring", "vital signs monitor", "vital sign monitor", "vitals monitor", "moniteur patient", "moniteur de patient", "moniteur de signes vitaux"])) {
-    add("patient monitor", "vital signs monitor", "bedside monitor", "multiparameter monitor");
+  if (includesAny(query, ["bag valve mask", "bag valve masks", "bvm", "ambu bag", "sac ambu", "ballon masque", "ballon autoremplisseur"])) {
+    add("bag valve mask", "manual resuscitator", "resuscitator", "BVM", "ambu bag");
+  }
+  if (includesAny(query, ["nasal cannula", "nasal canula", "oxygen cannula", "canule nasale", "line onner cannula", "liner cannula"])) {
+    add("nasal cannula", "oxygen nasal cannula", "oxygen cannula");
+  }
+  if (includesAny(query, ["patient monitor", "patient monitors", "patient monitoring", "vital signs monitor", "vital sign monitor", "vitals monitor", "heart rate", "heart reate", "heart monitor", "cardiac monitor", "heart rate machine", "moniteur cardiaque", "moniteur patient", "moniteur de patient", "moniteur de signes vitaux"])) {
+    add("patient monitor", "vital signs monitor", "bedside monitor", "multiparameter monitor", "heart rate monitor", "ECG monitor");
+  }
+  if (includesAny(query, ["ecg", "ekg", "ecg machine", "ekg machine", "ecg monitor", "ekg monitor", "electrocardiograph", "electrocardiographe", "électrocardiographe", "machine ecg", "moniteur ecg"])) {
+    const accessoryQuery = includesAny(original, ["accessory", "accessories", "paper", "recording paper", "electrode", "electrodes", "lead", "leads", "leadwire", "lead wire", "cable", "bag", "software", "viewer"]);
+    if (!accessoryQuery) add("ECG machine", "EKG machine", "electrocardiograph", "resting ECG", "EDAN SE", "SE-1200", "SE-1202", "SE-301", "SE-601", "patient monitor", "vital signs monitor", "ECG monitor");
   }
   if (includesAny(query, ["medical bag", "medical bags", "medic bag", "medic bags", "trauma bag", "trauma bags", "ems bag", "emt bag", "jump bag", "jump bags", "sac medical", "sac médical", "sacs medicaux", "sacs médicaux"])) {
     add("medical bag", "trauma bag", "ems bag", "medical backpack");
+  }
+  if (includesAny(query, ["stretcher", "stretchers", "brancard", "brancards", "civiere", "civière"])) {
+    add("stretcher", "ambulance cot", "transport stretcher", "scoop stretcher", "basket stretcher", "rescue stretcher");
   }
   if (includesAny(query, ["fournitures pour perfusion intraveineuse", "fourniture pour perfusion intraveineuse", "fournitures intraveineuses", "intraveineuse", "intraveineux", "perfusion", "iv supplies", "iv administration", "iv catheter", "iv solution", "intravenous"])) {
     add("IV catheter", "IV administration", "IV solution", "intravenous");
@@ -811,7 +914,10 @@ export async function GET(req: NextRequest) {
     q
   );
   const hits = applyPinnedSkuRanking(
-    applyAutocompleteOxygenMaskRanking(diversifyAutocompleteHits(rankedHits, naturalLanguagePlan), q),
+    applyAutocompleteFocusedFamilyRanking(
+      applyAutocompleteOxygenMaskRanking(diversifyAutocompleteHits(rankedHits, naturalLanguagePlan), q),
+      q
+    ),
     q,
     controls
   );

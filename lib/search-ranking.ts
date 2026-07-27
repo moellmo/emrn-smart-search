@@ -55,7 +55,7 @@ export function applyPinnedSkuListRanking(hits: any[] = [], pinnedSkus: string[]
 
     for (const value of allSkus) {
       const rank = pinned.indexOf(value);
-      if (rank >= 0) return rank;
+      if (rank >= 0) return pinned.length + rank;
     }
 
     return 999999;
@@ -111,6 +111,15 @@ function docNameText(hit: any) {
   ].filter(Boolean).join(" "));
 }
 
+function docProductTitleText(hit: any) {
+  const doc = hit.document || {};
+  return normalizeSearchText([
+    doc.name,
+    doc.parent_name,
+    doc.brand,
+  ].filter(Boolean).join(" "));
+}
+
 function docCategories(hit: any) {
   const categories = hit.document?.categories;
   const values = Array.isArray(categories) ? categories : [categories];
@@ -160,8 +169,66 @@ function originalNamePhraseScore(nameText: string, originalQuery: string) {
   return 0;
 }
 
+function focusedProductPhraseScore(hit: any, originalQuery: string, isAccessoryQuery: boolean) {
+  const normalized = normalizeSearchText(originalQuery);
+  if (!normalized || normalized === "*") return 0;
+  if (/\b(supplies|supply|stuff|things|equipment|products|items|fournitures|materiel|matériel)\b/.test(normalized)) return 0;
+
+  const tokens = normalized
+    .split(" ")
+    .map((token) => token.trim())
+    .filter((token) => token.length >= 2 && !["for", "the", "and", "with", "pour", "les", "des", "avec"].includes(token));
+  if (tokens.length < 2) return 0;
+
+  const titleText = ` ${docProductTitleText(hit)} `;
+  const fullText = ` ${docText(hit)} `;
+  const allInTitle = tokens.every((token) => new RegExp(`(^|\\s)${token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(\\s|$)`).test(titleText));
+  const allInText = tokens.every((token) => new RegExp(`(^|\\s)${token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(\\s|$)`).test(fullText));
+  const accessoryTitleTerms = [
+    "accessory",
+    "accessories",
+    "replacement",
+    "replacement part",
+    "refill",
+    "refill fluid",
+    "fluid",
+    "gel",
+    "part",
+    "parts",
+    "mount",
+    "bracket",
+    "adapter",
+    "battery",
+    "charger",
+    "cable",
+    "leadwire",
+    "lead wire",
+    "electrode",
+    "electrodes",
+    "paper",
+    "recording paper",
+    "carrying bag",
+    "software",
+    "viewer",
+    "probe",
+    "sensor",
+  ];
+  const accessoryTitle = hasAny(titleText, accessoryTitleTerms);
+
+  let score = 0;
+  if (allInTitle) score += 680;
+  else if (allInText) score += 180;
+  if (!isAccessoryQuery && accessoryTitle) score -= 900;
+  return score;
+}
+
 function hasAny(text: string, terms: string[]) {
-  return terms.some((term) => text.includes(normalizeSearchText(term)));
+  const looseText = text.replace(/[./-]/g, " ");
+  return terms.some((term) => {
+    const normalizedTerm = normalizeSearchText(term);
+    if (!normalizedTerm) return false;
+    return text.includes(normalizedTerm) || looseText.includes(normalizedTerm.replace(/[./-]/g, " "));
+  });
 }
 
 function hasAnyWholeWord(text: string, terms: string[]) {
@@ -207,8 +274,6 @@ const accessoryTerms = [
   "probe",
   "probes",
   "spo2",
-  "ecg",
-  "ekg",
   "charger",
   "power supply",
   "adapter",
@@ -423,7 +488,28 @@ const patientMonitorUnitTerms = [
   "fetal monitor",
   "maternal monitor",
   "fetal & maternal monitor",
+  "ecg machine",
+  "ekg machine",
+  "ecg monitor",
+  "ekg monitor",
+  "ecg unit",
+  "ekg unit",
+  "electrocardiograph",
+  "electrocardiographs",
+  "diagnostic ecg",
+  "resting ecg",
+  "resting ekg",
   "monitor with printer",
+  "edan ecg",
+  "edan se",
+  "se-1200",
+  "se1200",
+  "se-1201",
+  "se1201",
+  "se-1202",
+  "se1202",
+  "se-301",
+  "se301",
   "edan im3",
   "edan m3",
   "edan x",
@@ -467,7 +553,6 @@ const patientMonitorDemoteTerms = [
   "stand",
   "ecg monitoring electrode",
   "ekg diagnostic electrode",
-  "resting ekg",
   "monitoring electrode",
   "electrode",
   "electrodes",
@@ -856,20 +941,60 @@ const accessoryIntentRules = [
   {
     match: ["aed", "defib", "defibrillator", "defibrillators", "defibrillateur", "défibrillateur", "dea"],
     accessories: ["pad", "pads", "electrode", "electrodes", "battery", "batteries", "cabinet", "case", "sign", "trainer", "training", "bracket", "mount"],
-    demoteMain: ["automated external defibrillator", "defibrillator", "aed 3", "lifepak cr2", "heartstart frx", "heartstart onsite", "powerheart"],
+    demoteMain: ["automated external defibrillator", "defibrillator", "defibrillator kit", "defibrillator kits", "aed kit", "aed kits", "aed 3", "lifepak cr2", "heartstart frx", "heartstart onsite", "powerheart"],
+  },
+  {
+    match: ["dummy", "dummies", "manikin", "manikins", "mannequin", "mannequins", "training manikin", "patient simulator", "qcpr", "q cpr"],
+    accessories: ["accessory", "accessories", "part", "parts", "foreign object", "foreign objects", "skin", "face", "case", "limb", "limbs", "arm", "arms", "leg", "legs", "valve", "filter", "pad", "pads", "insert", "inserts"],
+    demoteMain: ["cpr manikin", "training manikin", "patient simulator", "rescue dummy", "manikin", "manikins", "mannequin", "mannequins", "little baby qcpr", "little family qcpr", "little anne qcpr", "prestan", "resusci anne"],
   },
   {
     match: ["patient monitor", "patient monitors", "vital signs monitor", "vital sign monitor", "monitor", "monitors"],
-    accessories: ["cuff", "cuffs", "hose", "tube", "tubing", "cable", "cables", "lead", "leads", "leadwire", "sensor", "sensors", "probe", "probes", "spo2", "ecg", "ekg", "paper", "roll"],
+    accessories: ["cuff", "cuffs", "hose", "tube", "tubing", "cable", "cables", "lead", "leads", "leadwire", "sensor", "sensors", "probe", "probes", "spo2", "paper", "roll"],
     demoteMain: ["patient monitor", "vital signs monitor", "vital sign monitor", "bedside monitor", "multiparameter monitor"],
   },
+];
+
+const explicitAccessoryQueryTerms = [
+  ...accessoryTerms,
+  "accessory",
+  "accessories",
+  "paper",
+  "pad",
+  "pads",
+  "part",
+  "parts",
+  "replacement",
+  "recording paper",
+  "thermal paper",
+  "electrode",
+  "electrodes",
+  "lead",
+  "leads",
+  "leadwire",
+  "lead wire",
+  "cable",
+  "cables",
+  "bag",
+  "carrying bag",
+  "case",
+  "software",
+  "viewer",
+  "usb",
+  "sentinel",
+  "trainer",
+  "training",
+  "skin",
+  "face",
+  "valve",
+  "filter",
 ];
 
 export function applyIntentRanking(hits: any[] = [], originalQuery: string, searchQuery = "") {
   const query = normalizeSearchText(`${originalQuery} ${searchQuery}`);
   const originalNormalizedQuery = normalizeSearchText(originalQuery);
   if (!hits.length || !query) return hits;
-  const isAccessoryQuery = hasAny(originalNormalizedQuery, accessoryTerms);
+  const isAccessoryQuery = hasAny(originalNormalizedQuery, explicitAccessoryQueryTerms);
   const activeAccessoryRules = accessoryIntentRules.filter(
     (rule) => hasAny(query, rule.match) && hasAny(originalNormalizedQuery, rule.accessories)
   );
@@ -915,12 +1040,83 @@ export function applyIntentRanking(hits: any[] = [], originalQuery: string, sear
     },
     {
       match: [
+        "ecg",
+        "ekg",
+        "ecg machine",
+        "ekg machine",
+        "ecg monitor",
+        "ekg monitor",
+        "edan ecg",
+        "edan machine",
+        "electrocardiograph",
+        "electrocardiographs",
+        "diagnostic ecg",
+        "resting ecg",
+        "resting ekg",
+      ],
+      prefer: patientMonitorUnitTerms,
+      preferStrong: [
+        "ecg machine",
+        "ekg machine",
+        "ecg monitor",
+        "ekg monitor",
+        "electrocardiograph",
+        "diagnostic ecg",
+        "resting ecg",
+        "resting ekg",
+        "edan ecg",
+        "edan se",
+        "se-1200",
+        "se1200",
+        "se-1201",
+        "se1201",
+        "se-1202",
+        "se1202",
+        "se-301",
+        "se301",
+        "patient monitor",
+        "vital signs monitor",
+        "vital sign monitor",
+      ],
+      demote: patientMonitorDemoteTerms,
+      demoteStrong: [
+        "accessory",
+        "accessories",
+        "carrying bag",
+        "bag",
+        "software",
+        "viewer",
+        "usb",
+        "sentinel",
+        "electrode",
+        "electrodes",
+        "leadwire",
+        "lead wire",
+        "lead wires",
+        "cable",
+        "cables",
+        "paper",
+        "recording paper",
+        "thermal paper",
+        "roll",
+        "adapter",
+        "battery",
+        "cart",
+        "mount",
+        "bracket",
+      ],
+      skipDemote: isAccessoryQuery,
+    },
+    {
+      match: [
         "patient monitor",
         "patient monitors",
         "patient monitoring",
         "vital signs monitor",
         "vital sign monitor",
         "vitals monitor",
+        "ecg monitor",
+        "ekg monitor",
         "medical monitor",
         "medical monitors",
         "monitor",
@@ -1047,6 +1243,7 @@ export function applyIntentRanking(hits: any[] = [], originalQuery: string, sear
     const categoryText = ` ${docCategories(hit).join(" ")} `;
     let intentScore = categoryPhraseScore(hit, originalQuery, searchQuery);
     intentScore += originalNamePhraseScore(nameText, originalQuery);
+    intentScore += focusedProductPhraseScore(hit, originalQuery, isAccessoryQuery);
     const textScore = Number(hit.text_match || hit._text_match || 0);
     const isFirstAidKitQuery = hasAny(query, ["first aid kit", "first aid kits", "trousse de premiers soins", "trousses de premiers soins", "trousse de premiers secours", "trousses de premiers secours", "trousse premiers soins", "trousses premiers soins", "trousse premiers secours", "trousses premiers secours"]);
     if (isFirstAidKitQuery) {
@@ -1089,6 +1286,48 @@ export function applyIntentRanking(hits: any[] = [], originalQuery: string, sear
       else if (hasAny(nameText, patientMonitorUnitTerms)) intentScore += 180;
       if (monitorAccessoryName || hasAny(nameText, patientMonitorDemoteTerms)) intentScore -= 620;
     }
+    const isEcgEquipmentQuery = hasAny(query, ["ecg", "ekg", "ecg machine", "ekg machine", "edan machine", "edan ecg", "electrocardiograph"]);
+    if (isEcgEquipmentQuery && !isAccessoryQuery) {
+      const ecgAccessoryName = hasAny(nameText, [
+        "accessory", "accessories", "carrying bag", "bag", "software", "viewer", "usb", "sentinel",
+        "electrode", "electrodes", "leadwire", "lead wire", "lead wires", "lead", "leads", "cable", "cables",
+        "paper", "recording paper", "thermal paper", "roll", "adapter", "battery", "cart", "mount", "bracket",
+      ]);
+      const ecgUnitName = hasAny(nameText, [
+        "ecg machine", "ekg machine", "ecg monitor", "ekg monitor", "electrocardiograph", "diagnostic ecg",
+        "resting ecg", "resting ekg", "edan ecg", "edan se", "se-1200", "se1200", "se-1201", "se1201", "se-1202", "se1202", "se-301", "se301",
+        "patient monitor", "vital signs monitor", "vital sign monitor", "bedside monitor", "multiparameter monitor",
+      ]);
+      const ecgUnitIndexed = hasAny(text, [
+        "ecg machine", "ekg machine", "ecg monitor", "ekg monitor", "electrocardiograph", "diagnostic ecg",
+        "heart rate monitoring", "cardiac monitoring", "vital signs monitor", "patient monitor",
+      ]);
+      if (ecgUnitName && !ecgAccessoryName) intentScore += 900;
+      else if (ecgUnitIndexed && !ecgAccessoryName) intentScore += 420;
+      if (ecgAccessoryName) intentScore -= 900;
+    }
+    const isOximeterQuery = hasAny(query, ["oximeter", "oximeters", "oxymeter", "oxymeters", "pulse oximeter", "pulse ox", "spo2 monitor", "oximetre", "oximètre", "saturometre", "saturomètre"]);
+    if (isOximeterQuery && !isAccessoryQuery) {
+      const oximeterUnit = hasAny(nameText, ["pulse oximeter", "pulse ox", "finger pulse oximeter", "fingertip pulse oximeter", "spo2 monitor", "co-oximeter", "oximeter"]);
+      const oximeterAccessory = hasAny(nameText, ["accessory", "accessories", "sensor", "sensors", "probe", "probes", "cable", "extension cable", "adapter", "battery"]);
+      if (oximeterUnit && !oximeterAccessory) intentScore += 560;
+      if (oximeterAccessory) intentScore -= 760;
+    }
+    const isCannulaQuery = hasAny(query, ["nasal cannula", "nasal canula", "oxygen cannula", "canule nasale", "line onner cannula", "liner cannula"]);
+    if (isCannulaQuery) {
+      const cannulaName = hasAny(nameText, ["nasal cannula", "oxygen nasal cannula", "oxygen cannula", "cannula"]);
+      if (cannulaName) intentScore += 520;
+      else intentScore -= 420;
+    }
+    const isBluePhantomQuery = hasAny(query, ["blue phantom"]);
+    if (isBluePhantomQuery && !isAccessoryQuery) {
+      const bluePhantomName = hasAny(nameText, ["blue phantom"]);
+      const refillName = hasAny(nameText, ["refill", "refill fluid", "fluid", "gel"]);
+      const modelName = hasAny(nameText, ["branched", "vessel", "model", "models", "phantom"]);
+      if (bluePhantomName && modelName && !refillName) intentScore += 760;
+      else if (bluePhantomName && !refillName) intentScore += 420;
+      if (refillName) intentScore -= 900;
+    }
     const isQcprQuery = hasAny(query, ["qcpr", "q cpr"]);
     const isQcprPartsQuery = hasAny(originalNormalizedQuery, ["accessory", "accessories", "part", "parts", "foreign object", "foreign objects", "skin", "face", "case", "limb", "limbs", "arm", "arms", "leg", "legs", "valve", "filter"]);
     if (isQcprQuery && !isQcprPartsQuery) {
@@ -1100,12 +1339,18 @@ export function applyIntentRanking(hits: any[] = [], originalQuery: string, sear
     }
     const isManikinQuery = hasAny(query, ["dummy", "dummies", "manikin", "manikins", "mannequin", "mannequins", "training manikin", "patient simulator", "qcpr", "q cpr"]);
     if (isManikinQuery) {
+      const isManikinAccessoryQuery = hasAny(originalNormalizedQuery, ["accessory", "accessories", "part", "parts", "foreign object", "foreign objects", "skin", "face", "case", "limb", "limbs", "arm", "arms", "leg", "legs", "valve", "filter", "pad", "pads", "insert", "inserts"]);
       const nameLooksLikeUnit = hasAny(nameText, manikinUnitTerms);
       const nameLooksLikeAccessory = hasAny(nameText, manikinAccessoryDemoteTerms);
       const categoryLooksLikeTraining = categoryText.includes(" medical training ") || categoryText.includes(" manikins ");
-      if ((nameLooksLikeUnit || categoryLooksLikeTraining) && !nameLooksLikeAccessory) intentScore += 280;
-      else if (nameLooksLikeUnit) intentScore += 90;
-      if (nameLooksLikeAccessory) intentScore -= 340;
+      if (isManikinAccessoryQuery) {
+        if (nameLooksLikeAccessory) intentScore += 620;
+        if (nameLooksLikeUnit && !nameLooksLikeAccessory) intentScore -= 520;
+      } else {
+        if ((nameLooksLikeUnit || categoryLooksLikeTraining) && !nameLooksLikeAccessory) intentScore += 280;
+        else if (nameLooksLikeUnit) intentScore += 90;
+        if (nameLooksLikeAccessory) intentScore -= 340;
+      }
     }
     const isCprMaskQuery = hasAny(originalNormalizedQuery, ["cpr mask", "cpr masks", "masque rcr", "masques rcr", "rcr mask", "rcr masks"]);
     if (isCprMaskQuery) {
@@ -1121,6 +1366,22 @@ export function applyIntentRanking(hits: any[] = [], originalQuery: string, sear
       if (nameLooksLikeOxygenMask) intentScore += 460;
       else intentScore -= 560;
       if (hasAny(nameText, oxygenMaskDemoteTerms)) intentScore -= 380;
+    }
+    const isBvmQuery = hasAny(originalNormalizedQuery, ["bag valve mask", "bag valve masks", "bvm", "ambu bag", "sac ambu", "ballon masque", "ballon autoremplisseur"]);
+    if (isBvmQuery) {
+      const nameLooksLikeBvm = hasAny(nameText, ["bag valve mask", "bag valve masks", "bvm", "manual resuscitator", "resuscitator", "ambu bag", "smart bag", "manual ventilation"]);
+      const nameLooksLikeGenericMask = hasAny(nameText, ["n95", "kn95", "procedure mask", "surgical mask", "face mask", "paper face mask", "earloop", "oxygen mask", "aerosol mask", "nebulizer mask"]);
+      if (nameLooksLikeBvm) intentScore += 900;
+      else intentScore -= 700;
+      if (nameLooksLikeGenericMask) intentScore -= 900;
+    }
+    const isBloodPressureCuffQuery = hasAny(originalNormalizedQuery, ["blood pressure cuff", "bp cuff", "brassard", "brassard de tension"]);
+    if (isBloodPressureCuffQuery && !isAccessoryQuery) {
+      const nameLooksLikeBpCuff = hasAny(nameText, ["blood pressure cuff", "bp cuff", "sphygmomanometer", "adult cuff", "child cuff"]);
+      const nameLooksLikeTrainingOrReplacement = hasAny(nameText, ["training", "trainer", "replacement", "manikin", "simulator", "assembly"]);
+      if (nameLooksLikeBpCuff && !nameLooksLikeTrainingOrReplacement) intentScore += 520;
+      else if (nameLooksLikeBpCuff) intentScore += 120;
+      if (nameLooksLikeTrainingOrReplacement) intentScore -= 520;
     }
     const isBeltQuery = hasAny(query, ["ceinture", "ceintures", "belt", "belts"]);
     if (isBeltQuery) {
@@ -1168,8 +1429,11 @@ export function applyIntentRanking(hits: any[] = [], originalQuery: string, sear
       if (hasAny(nameText, scalpelDemoteTerms)) intentScore -= 360;
     }
     for (const rule of activeAccessoryRules) {
-      if (hasAnyWholeWord(text, rule.accessories)) intentScore += 35;
-      if (hasAny(text, rule.demoteMain) && !hasAnyWholeWord(text, rule.accessories)) intentScore -= 35;
+      const hasRequestedAccessoryName = hasAnyWholeWord(nameText, rule.accessories);
+      const hasRequestedAccessoryText = hasAnyWholeWord(text, rule.accessories);
+      if (hasRequestedAccessoryName) intentScore += 900;
+      else if (hasRequestedAccessoryText) intentScore += 160;
+      if (hasAny(nameText, rule.demoteMain) && !hasRequestedAccessoryName) intentScore -= 900;
     }
     for (const intent of active) {
       if (intent.skipDemote) continue;
