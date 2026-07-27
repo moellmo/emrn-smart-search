@@ -464,12 +464,26 @@
     return "";
   }
   function correctionLabel(){return LANG==="fr"?"Résultats affichés pour":"Showing results for"}
+  function currentCorrectionFallback(){
+    const raw=String(activeInput?.value||document.querySelector("[data-smart-results-input]")?.value||new URLSearchParams(window.location.search).get("search_query")||"").replace(/\s+/g," ").trim();
+    const normalized=raw.toLowerCase();
+    const map=[
+      [/^stet+h?oscop+e?$/,"stethoscope"],[/stet+h?oscop/,"stethoscope"],[/^otoscop+e?$/,"otoscope"],[/otoscop/,"otoscope"],
+      [/nusing|nuring|nursing suplies|nursing supplies/,"nursing supplies"],[/hosptial|hospital supl|hospital suppl/,"hospital supplies"],[/clinic|clici|doctor office|medical office/,"clinic supplies"]
+    ];
+    const hit=map.find(([pattern])=>pattern.test(normalized));
+    if(hit&&hit[1]&&hit[1].toLowerCase()!==normalized)return hit[1];
+    return "";
+  }
   function stripObjectObjectText(root=document){
     try{
       const walker=document.createTreeWalker(root,NodeFilter.SHOW_TEXT);
       const nodes=[];
       while(walker.nextNode())if(/\[object Object\]/.test(walker.currentNode.nodeValue||""))nodes.push(walker.currentNode);
-      nodes.forEach((node)=>{node.nodeValue=(node.nodeValue||"").replace(/\[object Object\]/g,"").trim()});
+      nodes.forEach((node)=>{
+        const fallback=currentCorrectionFallback();
+        node.nodeValue=fallback?`${correctionLabel()} ${fallback}`:(node.nodeValue||"").replace(/\[object Object\]/g,"").trim();
+      });
     }catch{}
   }
   function correctionNotice(data,q,mode="results"){

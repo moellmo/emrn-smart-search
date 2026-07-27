@@ -533,12 +533,13 @@ export async function GET(req: NextRequest) {
     },
   ];
 
+  const suggestedQuery = normalizeSuggestedQuery(naturalLanguagePlan.suggested_query) || normalizeSuggestedQuery(smartQuery.suggested_query);
   const responseBody = {
       products,
       facets,
       ...smartQuery,
-      natural_language_plan: naturalLanguagePlan,
-      suggested_query: naturalLanguagePlan.suggested_query || smartQuery.suggested_query,
+      natural_language_plan: { ...naturalLanguagePlan, suggested_query: normalizeSuggestedQuery(naturalLanguagePlan.suggested_query) },
+      suggested_query: suggestedQuery,
       fallback_terms: products.length ? [] : smartQuery.fallback_terms,
     };
 
@@ -546,8 +547,31 @@ export async function GET(req: NextRequest) {
     query: q,
     customerId,
     durationMs: Date.now() - startedAt,
-    mappedQuery: naturalLanguagePlan.suggested_query || smartQuery.suggested_query,
+    mappedQuery: suggestedQuery,
   });
 
   return NextResponse.json(responseBody, { headers: corsHeaders });
+}
+
+function normalizeSuggestedQuery(value: unknown): string {
+  if (!value) return "";
+  if (typeof value === "string") return value.replace(/\s+/g, " ").trim();
+  if (typeof value === "object") {
+    const item = value as Record<string, unknown>;
+    return normalizeSuggestedQuery(
+      item.suggested_query ||
+        item.corrected_query ||
+        item.correctedQuery ||
+        item.normalized_query ||
+        item.normalizedQuery ||
+        item.query ||
+        item.value ||
+        item.label ||
+        item.text ||
+        item.corrected ||
+        item.en ||
+        item.fr
+    );
+  }
+  return "";
 }

@@ -867,13 +867,14 @@ export async function GET(req: NextRequest) {
 
   const responsePinnedSkus = getPinnedSkusForContext({ query: q, brand, category, categoryId, categoryIds }, controls);
 
+  const suggestedQuery = normalizeSuggestedQuery(naturalLanguagePlan.suggested_query) || normalizeSuggestedQuery(smartQuery.suggested_query);
   const responseBody = {
     ...results,
     ...smartQuery,
     fallback_terms: results.hits?.length ? [] : smartQuery.fallback_terms,
     pinned_skus: responsePinnedSkus,
-    natural_language_plan: naturalLanguagePlan,
-    suggested_query: naturalLanguagePlan.suggested_query || smartQuery.suggested_query,
+    natural_language_plan: { ...naturalLanguagePlan, suggested_query: normalizeSuggestedQuery(naturalLanguagePlan.suggested_query) },
+    suggested_query: suggestedQuery,
     active_filters: {
       brand,
       category,
@@ -894,8 +895,31 @@ export async function GET(req: NextRequest) {
     customerId,
     referer: req.headers.get("referer") || "",
     durationMs: Date.now() - startedAt,
-    mappedQuery: naturalLanguagePlan.suggested_query || smartQuery.suggested_query,
+    mappedQuery: suggestedQuery,
   });
 
   return NextResponse.json(responseBody, { headers: corsHeaders });
+}
+
+function normalizeSuggestedQuery(value: unknown): string {
+  if (!value) return "";
+  if (typeof value === "string") return value.replace(/\s+/g, " ").trim();
+  if (typeof value === "object") {
+    const item = value as Record<string, unknown>;
+    return normalizeSuggestedQuery(
+      item.suggested_query ||
+        item.corrected_query ||
+        item.correctedQuery ||
+        item.normalized_query ||
+        item.normalizedQuery ||
+        item.query ||
+        item.value ||
+        item.label ||
+        item.text ||
+        item.corrected ||
+        item.en ||
+        item.fr
+    );
+  }
+  return "";
 }
