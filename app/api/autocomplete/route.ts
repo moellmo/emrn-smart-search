@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { typesenseSearch } from "../../../lib/typesense";
 import { buildSmartSearchQuery } from "../../../lib/smart-search-translator";
+import { buildNaturalLanguageSearchPlan } from "../../../lib/natural-language-search";
 import { normalizeSearchText } from "../../../lib/search-language";
 import { applyBrandQueryRanking, applyHiddenSkuFilter, applyIntentRanking, applyPinnedSkuRanking, applyPrivateCategoryFilter } from "../../../lib/search-ranking";
 import { getEffectiveSearchOverrides, getPinnedSkusForQuery } from "../../../lib/search-overrides";
@@ -272,13 +273,15 @@ export async function GET(req: NextRequest) {
   }
 
   const controls = await getEffectiveSearchOverrides();
-  const smartQuery = await buildSmartSearchQuery(q);
+  const naturalLanguagePlan = await buildNaturalLanguageSearchPlan(q, controls);
+  const smartQuery = await buildSmartSearchQuery(q, { skipOpenAI: naturalLanguagePlan.active && naturalLanguagePlan.source === "manual" });
+  const primaryQuery = naturalLanguagePlan.active ? naturalLanguagePlan.rewritten_query || smartQuery.search_query : smartQuery.search_query;
 
   const results: any = await typesenseSearch
     .collections(COLLECTION_NAME)
     .documents()
     .search({
-      q: smartQuery.search_query,
+      q: primaryQuery,
       query_by: "sku,all_skus,name,parent_name,brand,sold_by,categories,variant_label,option_text,search_text",
       query_by_weights: "30,24,16,12,8,7,6,5,5,3",
       filter_by: "is_visible:=true",
@@ -329,7 +332,14 @@ export async function GET(req: NextRequest) {
     );
   }
 
-  for (const categoryName of categoryFacetNamesForQuery(results, q, smartQuery.search_query)) {
+  const categoryNames = Array.from(
+    new Set([
+      ...(naturalLanguagePlan.category_queries || []),
+      ...categoryFacetNamesForQuery(results, q, smartQuery.search_query),
+    ])
+  ).slice(0, 8);
+
+  for (const categoryName of categoryNames) {
     supplementalSearches.push(
       typesenseSearch
         .collections(COLLECTION_NAME)
@@ -345,7 +355,14 @@ export async function GET(req: NextRequest) {
     );
   }
 
-  for (const recallQuery of autocompleteRecallQueries(q, smartQuery.search_query)) {
+  const recallQueries = Array.from(
+    new Set([
+      ...(naturalLanguagePlan.recall_queries || []),
+      ...autocompleteRecallQueries(q, smartQuery.search_query),
+    ])
+  ).slice(0, 10);
+
+  for (const recallQuery of recallQueries) {
     supplementalSearches.push(
       typesenseSearch
         .collections(COLLECTION_NAME)
@@ -432,6 +449,7 @@ export async function GET(req: NextRequest) {
       products,
       facets,
       ...smartQuery,
+      natural_language_plan: naturalLanguagePlan,
       fallback_terms: products.length ? [] : smartQuery.fallback_terms,
     },
     { headers: corsHeaders }
