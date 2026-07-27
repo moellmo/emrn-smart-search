@@ -46,7 +46,7 @@
       clearFilters: "Clear filters", brands: "Brands", categories: "Categories", skuLevelShown: "SKU-level results shown",
       addToCart: "Add to Cart", adding: "Adding...", added: "Added ✓", viewProduct: "View Product", addToQuote: "Add to quote", quoteOnly: "Quote only", backTop: "Back to top",
       noProductsFound: "No products found.", noResultsTitle: "No exact results found", noResultsBody: "Try one of these related searches or request a quote and EMRN can help source it.",
-      trySearches: "Try these searches", requestQuote: "Request a quote", askMeri: "Ask Meri for help", subcategories: "Subcategories", loadMore: "Show more products", loadingMore: "Loading...",
+      trySearches: "Try these searches", requestQuote: "Request a quote", askMeri: "Ask Meri for help", subcategories: "Subcategories", loadMore: "Show more products", loadingMore: "Loading...", showingResultsFor: "Showing results for",
     },
     fr: {
       products: "Produits", popular: "Recherches populaires", popularProducts: "Produits populaires", recent: "Recherches récentes",
@@ -60,7 +60,7 @@
       clearFilters: "Effacer les filtres", brands: "Marques", categories: "Catégories", skuLevelShown: "résultats par SKU affichés",
       addToCart: "Ajouter au panier", adding: "Ajout...", added: "Ajouté ✓", viewProduct: "Voir le produit", addToQuote: "Ajouter au devis", quoteOnly: "Devis seulement", backTop: "Retour en haut",
       noProductsFound: "Aucun produit trouvé.", noResultsTitle: "Aucun résultat exact trouvé", noResultsBody: "Essayez une recherche associée ou demandez un devis. EMRN peut vous aider à trouver l’article.",
-      trySearches: "Essayez ces recherches", requestQuote: "Demander un devis", askMeri: "Demander à Meri", subcategories: "Sous-catégories", loadMore: "Voir plus de produits", loadingMore: "Chargement...",
+      trySearches: "Essayez ces recherches", requestQuote: "Demander un devis", askMeri: "Demander à Meri", subcategories: "Sous-catégories", loadMore: "Voir plus de produits", loadingMore: "Chargement...", showingResultsFor: "Résultats affichés pour",
     }
   };
 
@@ -129,6 +129,8 @@
     .emrn-smart-results-header.compact{padding:18px 22px;margin-bottom:18px}
     .emrn-smart-results-header .eyebrow{color:#c34d50;font-size:12px;font-weight:900;text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px}
     .emrn-smart-results-header h1{margin:0 0 8px;font-size:32px;letter-spacing:-.6px}
+    .emrn-smart-did-you-mean{display:inline-flex;margin:8px 0 0;padding:7px 10px;border:1px solid #f0dada;border-radius:999px;background:#fff;color:#475569;font-size:13px;font-weight:800}
+    .emrn-smart-did-you-mean strong{color:#14365d;margin-left:4px}
     .emrn-smart-results-search{display:flex;gap:10px;margin-top:18px}
     .emrn-smart-results-search input{flex:1;height:52px;border:2px solid #c34d50;border-radius:999px;padding:0 18px;font-size:16px;outline:none}
     .emrn-smart-results-search button{border:0;background:#c34d50;color:#fff;border-radius:999px;padding:0 24px;font-weight:900;cursor:pointer}
@@ -445,6 +447,13 @@
     return `${t("resultsFor")} “${escapeHtml(q)}”`;
   }
 
+  function correctionNotice(data,q){
+    const suggested=String(data?.suggested_query||data?.natural_language_plan?.suggested_query||"").replace(/\s+/g," ").trim();
+    const original=String(q||"").replace(/\s+/g," ").trim();
+    if(!suggested||!original||original==="*"||suggested.toLowerCase()===original.toLowerCase())return"";
+    return `<div class="emrn-smart-did-you-mean">${t("showingResultsFor")} <strong>${escapeHtml(suggested)}</strong></div>`;
+  }
+
   function getSmartListingMount(){
     if(shouldReplaceCategory){
       const smartMount=document.querySelector("#emrn-smart-listing-app");
@@ -502,7 +511,7 @@
       const found=Number(data.found||products.length||0);
       if(q&&q!=="*")trackSmartSearchEvent(products.length?"results_view":"no_results",{query:q});
       const brandFacet=(data.facet_counts||[]).find((facet)=>facet.field_name==="brand")?.counts||[];const categoryFacet=(data.facet_counts||[]).find((facet)=>facet.field_name==="categories")?.counts||[];const soldByFacet=(data.facet_counts||[]).find((facet)=>facet.field_name==="sold_by")?.counts||[];const colorFacet=(data.facet_counts||[]).find((facet)=>facet.field_name==="color")?.counts||[];const priceFacet=(data.facet_counts||[]).find((facet)=>facet.field_name==="price");
-      shell.innerHTML=`${compactListing?"":`<div class="emrn-smart-results-header"><div class="eyebrow">EMRN SmartSearch</div><h1>${title}</h1><p>${found||products.length} ${t("skuLevelShown")}${brand?` • ${escapeHtml(brand)}`:""}${category?` • ${escapeHtml(category)}`:""}</p><div class="emrn-smart-results-search"><input value="${escapeHtml(q==="*"?"":q)}" placeholder="${t("searchPlaceholder")}" data-smart-results-input><button type="button" data-smart-results-search>${t("searchButton")}</button></div></div>`}${filterToggleButton()}<div class="emrn-smart-results-shell"><aside class="emrn-smart-results-filters"><div class="emrn-smart-filter-title">${t("refineBy")}</div><div class="emrn-smart-filter-note">${brand||category||categoryId?t("filtersApplied"):t("chooseBrandCategory")}</div>${isResultsPage&&(brand||category||categoryId)?`<button type="button" class="emrn-smart-viewall" data-clear-filters>${t("clearFilters")}</button>`:""}${renderCategoryTree(categoryId,category,categoryFacet)}${facetGroup(t("brands"),brandFacet,"brand")}${facetGroup("Sold By",soldByFacet,"sold_by")}${facetGroup("Color",colorFacet,"color")}${priceFilter(priceFacet,products,priceMin,priceMax)}</aside><div class="emrn-smart-results-main">${relatedCategoryBubbles(categoryFacet,products,category)}<div class="emrn-smart-results-top"><div><h2>${t("products")}</h2><p><span data-results-count>${products.length}</span> / ${found||products.length} ${t("skuLevelShown")}</p></div>${sortSelect(sort)}</div>${products.length?`<div class="emrn-smart-products-grid" data-products-grid>${products.map(productCard).join("")}</div>${renderLoadMore(found,products.length,1)}`:noResultsBox(data,q)}</div></div>`;
+      shell.innerHTML=`${compactListing?"":`<div class="emrn-smart-results-header"><div class="eyebrow">EMRN SmartSearch</div><h1>${title}</h1><p>${found||products.length} ${t("skuLevelShown")}${brand?` • ${escapeHtml(brand)}`:""}${category?` • ${escapeHtml(category)}`:""}</p>${correctionNotice(data,q)}<div class="emrn-smart-results-search"><input value="${escapeHtml(q==="*"?"":q)}" placeholder="${t("searchPlaceholder")}" data-smart-results-input><button type="button" data-smart-results-search>${t("searchButton")}</button></div></div>`}${filterToggleButton()}<div class="emrn-smart-results-shell"><aside class="emrn-smart-results-filters"><div class="emrn-smart-filter-title">${t("refineBy")}</div><div class="emrn-smart-filter-note">${brand||category||categoryId?t("filtersApplied"):t("chooseBrandCategory")}</div>${isResultsPage&&(brand||category||categoryId)?`<button type="button" class="emrn-smart-viewall" data-clear-filters>${t("clearFilters")}</button>`:""}${renderCategoryTree(categoryId,category,categoryFacet)}${facetGroup(t("brands"),brandFacet,"brand")}${facetGroup("Sold By",soldByFacet,"sold_by")}${facetGroup("Color",colorFacet,"color")}${priceFilter(priceFacet,products,priceMin,priceMax)}</aside><div class="emrn-smart-results-main">${relatedCategoryBubbles(categoryFacet,products,category)}<div class="emrn-smart-results-top"><div><h2>${t("products")}</h2><p><span data-results-count>${products.length}</span> / ${found||products.length} ${t("skuLevelShown")}</p></div>${sortSelect(sort)}</div>${products.length?`<div class="emrn-smart-products-grid" data-products-grid>${products.map(productCard).join("")}</div>${renderLoadMore(found,products.length,1)}`:noResultsBox(data,q)}</div></div>`;
       expandActiveCategoryTree();
     }catch(err){
       console.error("[EMRN SmartSearch] results page error",err);

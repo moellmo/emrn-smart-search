@@ -401,6 +401,13 @@ function escapeRegExp(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+function containsExactNormalizedTerm(normalizedQuery: string, normalizedTerm: string) {
+  if (!normalizedQuery || !normalizedTerm) return false;
+  if (normalizedQuery === normalizedTerm) return true;
+  const pattern = new RegExp(`(^|\\s)${escapeRegExp(normalizedTerm)}(?=\\s|$)`);
+  return pattern.test(normalizedQuery);
+}
+
 function editDistanceWithin(a: string, b: string, maxDistance: number) {
   if (Math.abs(a.length - b.length) > maxDistance) return false;
   const previous = Array.from({ length: b.length + 1 }, (_, index) => index);
@@ -478,6 +485,7 @@ export function expandSearchQuery(query: string) {
   const normalized = normalizeSearchText(query);
   const additions = new Set<string>();
   const matchedTerms: string[] = [];
+  let suggestedQuery = "";
 
   const orderedSynonyms = [...manualSearchSynonyms].sort((a, b) =>
     normalizeSearchText(b[0]).length - normalizeSearchText(a[0]).length
@@ -491,6 +499,13 @@ export function expandSearchQuery(query: string) {
     if (matchesNormalizedTerm(normalized, normalizedTerm)) {
       matchedTerms.push(normalizedTerm);
       synonyms.forEach((synonym) => additions.add(synonym));
+      if (!suggestedQuery) {
+        const firstSynonym = synonyms.map((synonym) => synonym.trim()).find(Boolean) || "";
+        const normalizedSynonym = normalizeSearchText(firstSynonym);
+        if (firstSynonym && normalizedSynonym && normalizedSynonym !== normalized && normalizedTerm !== normalizedSynonym && !containsExactNormalizedTerm(normalized, normalizedSynonym)) {
+          suggestedQuery = firstSynonym;
+        }
+      }
     }
   }
 
@@ -499,6 +514,7 @@ export function expandSearchQuery(query: string) {
     expanded: [query, ...Array.from(additions)].join(" "),
     language: detectQueryLanguage(query),
     expansions: Array.from(additions),
+    suggested_query: suggestedQuery,
   };
 }
 

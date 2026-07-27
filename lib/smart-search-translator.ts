@@ -11,6 +11,7 @@ type SmartQueryResult = {
   translator: "none" | "manual" | "openai" | "manual+openai";
   ai_status: "not_needed" | "missing_key" | "called" | "error";
   fallback_terms: string[];
+  suggested_query: string;
   redirect_url?: string;
 };
 
@@ -215,6 +216,7 @@ export async function buildSmartSearchQuery(query: string, options: { skipOpenAI
     translator,
     ai_status: aiStatus,
     fallback_terms: fallbackTerms,
+    suggested_query: manual.suggested_query || "",
     redirect_url: redirect?.url,
   };
 

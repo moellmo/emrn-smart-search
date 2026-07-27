@@ -188,11 +188,31 @@ export default function SmartSearchAdminPage() {
   const [boostRows, setBoostRows] = useState<Array<{ term: string; values: string }>>([]);
   const [noResultsRows, setNoResultsRows] = useState<Array<{ term: string; values: string }>>([]);
   const [naturalLanguageRulesJson, setNaturalLanguageRulesJson] = useState("{}");
-  const [naturalRulePhrase, setNaturalRulePhrase] = useState("");
+  const [naturalRulePhrase, setNaturalRulePhrase] = useState(() => {
+    try {
+      return typeof window === "undefined" ? "" : new URLSearchParams(window.location.search).get("natural_phrase") || "";
+    } catch {
+      return "";
+    }
+  });
   const [naturalRuleCategories, setNaturalRuleCategories] = useState("");
-  const [naturalRuleTerms, setNaturalRuleTerms] = useState("");
+  const [naturalRuleTerms, setNaturalRuleTerms] = useState(() => {
+    try {
+      return typeof window === "undefined" ? "" : new URLSearchParams(window.location.search).get("natural_terms") || "";
+    } catch {
+      return "";
+    }
+  });
   const [naturalRuleAvoid, setNaturalRuleAvoid] = useState("");
-  const [naturalRuleTestStatus, setNaturalRuleTestStatus] = useState("");
+  const [naturalRuleTestStatus, setNaturalRuleTestStatus] = useState(() => {
+    try {
+      return typeof window !== "undefined" && new URLSearchParams(window.location.search).get("approve_mapping") === "1"
+        ? "Review this suggested mapping, then click Add / update rule and Save all controls."
+        : "";
+    } catch {
+      return "";
+    }
+  });
   const [bulkRules, setBulkRules] = useState("");
   const [twoWaySynonyms, setTwoWaySynonyms] = useState(true);
   const [reindexStatus, setReindexStatus] = useState<ReindexStatus | null>(null);

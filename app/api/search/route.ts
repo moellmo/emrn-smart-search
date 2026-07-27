@@ -4,6 +4,7 @@ import { buildSmartSearchQuery } from "../../../lib/smart-search-translator";
 import { buildNaturalLanguageSearchPlan } from "../../../lib/natural-language-search";
 import { normalizeSearchText } from "../../../lib/search-language";
 import { applyBrandQueryRanking, applyHiddenSkuFilter, applyIntentRanking, applyPinnedSkuListRanking, applyPrivateCategoryFilter, explainResult } from "../../../lib/search-ranking";
+import { balanceHitsByProductFamily } from "../../../lib/search-result-balancing";
 import { getEffectiveSearchOverrides, getPinnedSkusForContext } from "../../../lib/search-overrides";
 import { PRODUCT_COLLECTION_ALIAS } from "../../../lib/search-index";
 import { STORE_URL, absoluteStoreUrl } from "../../../lib/store-url";
@@ -324,6 +325,8 @@ function applyNaturalLanguageBalancedRanking(hits: any[] = [], categoryQueries: 
   const score = (hit: any) => Number(hit.document?.popularity_score || 0);
   for (const bucket of buckets.values()) {
     bucket.sort((a, b) => score(b) - score(a));
+    const balancedBucket = balanceHitsByProductFamily(bucket, bucket.length);
+    bucket.splice(0, bucket.length, ...balancedBucket);
   }
 
   const balanced: any[] = [];
@@ -504,15 +507,26 @@ function scheduleSearchAnalytics({
   hitCount,
   customerId,
   referer,
+  durationMs,
+  mappedQuery,
 }: {
   query: string;
   page: number;
   hitCount: number;
   customerId: string;
   referer: string;
+  durationMs: number;
+  mappedQuery?: string;
 }) {
   const cleanQuery = String(query || "").trim();
   if (!cleanQuery || cleanQuery === "*" || page !== 1) return;
+  const cleanMappedQuery = String(mappedQuery || "").trim();
+  const speedBucket =
+    durationMs < 250 ? "search <250ms" :
+    durationMs < 500 ? "search 250-500ms" :
+    durationMs < 1000 ? "search 500-1000ms" :
+    durationMs < 2000 ? "search 1-2s" :
+    "search >2s";
 
   after(async () => {
     try {
@@ -538,6 +552,29 @@ function scheduleSearchAnalytics({
           created_at: now,
         });
       }
+      await typesenseAdmin.collections(ANALYTICS_COLLECTION_NAME).documents().create({
+        id: `${now}-${Math.random().toString(36).slice(2)}-speed`,
+        event: "server_search_speed",
+        query: cleanQuery.slice(0, 180),
+        product_name: speedBucket,
+        product_id: Math.max(1, Math.round(durationMs)),
+        customer_id: String(customerId || "").trim().slice(0, 80),
+        page_type: "smartsearch_api",
+        url: String(referer || "").trim().slice(0, 500),
+        created_at: now,
+      });
+      if (cleanMappedQuery && normalizeSearchText(cleanMappedQuery) !== normalizeSearchText(cleanQuery)) {
+        await typesenseAdmin.collections(ANALYTICS_COLLECTION_NAME).documents().create({
+          id: `${now}-${Math.random().toString(36).slice(2)}-mapping`,
+          event: "server_query_mapping",
+          query: cleanQuery.slice(0, 180),
+          product_name: cleanMappedQuery.slice(0, 240),
+          customer_id: String(customerId || "").trim().slice(0, 80),
+          page_type: "smartsearch_api",
+          url: String(referer || "").trim().slice(0, 500),
+          created_at: now,
+        });
+      }
     } catch (error) {
       console.warn("[SmartSearch analytics] could not record server search", error);
     }
@@ -549,6 +586,7 @@ export async function OPTIONS() {
 }
 
 export async function GET(req: NextRequest) {
+  const startedAt = Date.now();
   const { searchParams } = new URL(req.url);
 
   const q = searchParams.get("q") || "*";
@@ -835,6 +873,7 @@ export async function GET(req: NextRequest) {
     fallback_terms: results.hits?.length ? [] : smartQuery.fallback_terms,
     pinned_skus: responsePinnedSkus,
     natural_language_plan: naturalLanguagePlan,
+    suggested_query: naturalLanguagePlan.suggested_query || smartQuery.suggested_query,
     active_filters: {
       brand,
       category,
@@ -854,6 +893,8 @@ export async function GET(req: NextRequest) {
     hitCount: Array.isArray(results.hits) ? results.hits.length : Number(results.found || 0),
     customerId,
     referer: req.headers.get("referer") || "",
+    durationMs: Date.now() - startedAt,
+    mappedQuery: naturalLanguagePlan.suggested_query || smartQuery.suggested_query,
   });
 
   return NextResponse.json(responseBody, { headers: corsHeaders });

@@ -9,6 +9,7 @@ export type NaturalLanguageSearchPlan = {
   recall_queries: string[];
   rewritten_query: string;
   avoid_terms: string[];
+  suggested_query: string;
   confidence: number;
   ai_status: "not_needed" | "missing_key" | "called" | "error";
 };
@@ -300,8 +301,8 @@ function uniqueList(values: string[], limit: number) {
   return cleanList(values, limit);
 }
 
-function matchesAnyTerm(normalizedQuery: string, terms: string[]) {
-  return terms.some((term) => {
+function matchingTerm(normalizedQuery: string, terms: string[]) {
+  return terms.find((term) => {
     const normalizedTerm = normalizeSearchText(term);
     return matchesNormalizedTerm(normalizedQuery, normalizedTerm) || matchesNormalizedTerm(normalizedTerm, normalizedQuery);
   });
@@ -336,15 +337,16 @@ function shouldPlanNaturalLanguage(query: string) {
 
 function runtimePlanFor(query: string, controls?: SearchOverrides) {
   const normalized = normalizeSearchText(query);
-  const matches = Object.entries(controls?.naturalLanguageRules || {}).filter(([term]) =>
-    matchesAnyTerm(normalized, [term])
-  );
+  const matches = Object.entries(controls?.naturalLanguageRules || {}).filter(([term]) => matchingTerm(normalized, [term]));
   if (!matches.length) return null;
+  const hasExactMatch = matches.some(([term]) => normalizeSearchText(term) === normalized);
+  const suggestedQuery = hasExactMatch ? "" : matches.map(([term]) => term).find((term) => normalizeSearchText(term) !== normalized) || "";
 
   return {
     categoryQueries: uniqueList(matches.flatMap(([, rule]) => rule.categoryQueries), 18),
     recallQueries: uniqueList(matches.flatMap(([, rule]) => rule.recallQueries), 24),
     avoidTerms: uniqueList(matches.flatMap(([, rule]) => rule.avoidTerms || []), 12),
+    suggestedQuery,
   };
 }
 
@@ -353,13 +355,23 @@ function manualPlanFor(query: string, controls?: SearchOverrides) {
   if (runtime && (runtime.categoryQueries.length || runtime.recallQueries.length)) return runtime;
 
   const normalized = normalizeSearchText(query);
-  const matches = manualIntentPlans.filter((plan) => matchesAnyTerm(normalized, plan.match));
+  const matches = manualIntentPlans.filter((plan) => matchingTerm(normalized, plan.match));
   if (!matches.length) return null;
+  const suggestedQuery = matches
+    .map((plan) => {
+      const matched = matchingTerm(normalized, plan.match);
+      const canonical = plan.match[0] || "";
+      if (!matched || normalizeSearchText(canonical) === normalized) return "";
+      if (normalizeSearchText(matched) === normalized) return canonical;
+      return matched;
+    })
+    .find(Boolean) || "";
 
   return {
     categoryQueries: uniqueList(matches.flatMap((plan) => plan.categoryQueries), 18),
     recallQueries: uniqueList(matches.flatMap((plan) => plan.recallQueries), 24),
     avoidTerms: uniqueList(matches.flatMap((plan) => plan.avoidTerms || []), 12),
+    suggestedQuery,
   };
 }
 
@@ -372,6 +384,7 @@ function emptyPlan(query: string): NaturalLanguageSearchPlan {
     recall_queries: [],
     rewritten_query: "",
     avoid_terms: [],
+    suggested_query: "",
     confidence: 0,
     ai_status: "not_needed",
   };
@@ -505,6 +518,7 @@ export async function buildNaturalLanguageSearchPlan(query: string, controls?: S
     recall_queries: recallQueries,
     rewritten_query: cleanQuery([original, ...recallQueries.slice(0, 12)].join(" "), 260),
     avoid_terms: avoidTerms,
+    suggested_query: manual?.suggestedQuery || (ai?.normalizedQuery && normalizeSearchText(ai.normalizedQuery) !== normalizeSearchText(original) ? ai.normalizedQuery : ""),
     confidence: source === "manual" ? 0.95 : ai?.confidence || 0,
     ai_status: aiStatus,
   };

@@ -43,6 +43,11 @@ type AnalyticsSummary = {
   topRefinedQueries: MetricRow[];
   autocompleteShownQueries: MetricRow[];
   autocompleteEnterQueries: MetricRow[];
+  typoMappingSuggestions: MetricRow[];
+  searchSpeedBuckets: MetricRow[];
+  autocompleteSpeedBuckets: MetricRow[];
+  slowSearchQueries: MetricRow[];
+  slowAutocompleteQueries: MetricRow[];
   categoryClicks: MetricRow[];
   topClickedProducts: MetricRow[];
   topCartProducts: MetricRow[];
@@ -310,6 +315,11 @@ export default function SmartSearchAnalyticsPage() {
               <MetricTable title="Searches Quickly Replaced" rows={summary.topRefinedQueries || []} filename="smartsearch-refined-searches" />
               <MetricTable title="Autocomplete Shown" rows={summary.autocompleteShownQueries || []} filename="smartsearch-autocomplete-shown" />
               <MetricTable title="Autocomplete Entered Anyway" rows={summary.autocompleteEnterQueries || []} filename="smartsearch-autocomplete-entered" />
+              <TypoMappingTable rows={summary.typoMappingSuggestions || []} />
+              <MetricTable title="Search Speed Buckets" rows={summary.searchSpeedBuckets || []} filename="smartsearch-search-speed" />
+              <MetricTable title="Autocomplete Speed Buckets" rows={summary.autocompleteSpeedBuckets || []} filename="smartsearch-autocomplete-speed" />
+              <MetricTable title="Slow Search Queries" rows={summary.slowSearchQueries || []} filename="smartsearch-slow-searches" />
+              <MetricTable title="Slow Autocomplete Queries" rows={summary.slowAutocompleteQueries || []} filename="smartsearch-slow-autocomplete" />
               <MetricTable title="Category Clicks" rows={summary.categoryClicks || []} filename="smartsearch-category-clicks" />
               <MetricTable title="Product Clicks" rows={summary.topClickedProducts || []} filename="smartsearch-product-clicks" />
               <MetricTable title="Added To Cart" rows={summary.topCartProducts || []} filename="smartsearch-add-to-cart-products" />
@@ -377,6 +387,55 @@ function MetricTable({ title, rows, filename }: { title: string; rows: MetricRow
             </tr>
           )) : (
             <tr><td style={tableCellStyle} colSpan={3}>No data yet.</td></tr>
+          )}
+        </tbody>
+      </table>
+      {rows.length > visibleRows.length ? (
+        <button onClick={() => setLimit(rows.length)} style={{ ...outlineButtonStyle, marginTop: 10 }}>
+          View all rows ({rows.length})
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+function TypoMappingTable({ rows }: { rows: MetricRow[] }) {
+  const [limit, setLimit] = useState(10);
+  const visibleRows = rows.slice(0, limit);
+  const exportRows = rows.map((row) => ({ value: row.value, sku: row.sku || "", count: row.count }));
+
+  function controlsUrl(row: MetricRow, approve = false) {
+    const [phrase = "", mapped = ""] = row.value.split(" -> ").map((part) => part.trim());
+    const params = new URLSearchParams();
+    if (phrase) params.set("natural_phrase", phrase);
+    if (mapped) params.set("natural_terms", mapped);
+    if (approve) params.set("approve_mapping", "1");
+    return `/smartsearch-admin${params.toString() ? `?${params.toString()}` : ""}`;
+  }
+
+  return (
+    <div style={panelStyle}>
+      <TableHeader title="Typo / Synonym QA Suggestions" rows={exportRows} filename="smartsearch-typo-mappings" />
+      <table style={tableStyle}>
+        <thead>
+          <tr>
+            <th style={tableHeaderStyle}>Mapping</th>
+            <th style={tableHeaderStyle}>Count</th>
+            <th style={tableHeaderStyle}>Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          {visibleRows.length ? visibleRows.map((row, index) => (
+            <tr key={`${row.value}-${index}`}>
+              <td style={wideCellStyle}>{row.value}</td>
+              <td style={numberCellStyle}>{row.count}</td>
+              <td style={{ ...tableCellStyle, display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <a href={controlsUrl(row, true)} style={smallOutlineButtonStyle}>Approve</a>
+                <a href={controlsUrl(row)} style={smallOutlineButtonStyle}>Edit</a>
+              </td>
+            </tr>
+          )) : (
+            <tr><td style={tableCellStyle} colSpan={3}>No typo mappings yet.</td></tr>
           )}
         </tbody>
       </table>

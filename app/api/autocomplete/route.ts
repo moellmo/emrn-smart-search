@@ -1,14 +1,16 @@
-import { NextRequest, NextResponse } from "next/server";
-import { typesenseSearch } from "../../../lib/typesense";
+import { after, NextRequest, NextResponse } from "next/server";
+import { typesenseAdmin, typesenseSearch } from "../../../lib/typesense";
 import { buildSmartSearchQuery } from "../../../lib/smart-search-translator";
 import { buildNaturalLanguageSearchPlan } from "../../../lib/natural-language-search";
 import { normalizeSearchText } from "../../../lib/search-language";
 import { applyBrandQueryRanking, applyHiddenSkuFilter, applyIntentRanking, applyPinnedSkuRanking, applyPrivateCategoryFilter } from "../../../lib/search-ranking";
+import { balanceHitsByProductFamily } from "../../../lib/search-result-balancing";
 import { getEffectiveSearchOverrides, getPinnedSkusForQuery } from "../../../lib/search-overrides";
 import { PRODUCT_COLLECTION_ALIAS } from "../../../lib/search-index";
 import { STORE_URL, absoluteStoreUrl } from "../../../lib/store-url";
 
 const COLLECTION_NAME = PRODUCT_COLLECTION_ALIAS;
+const ANALYTICS_COLLECTION_NAME = "emrn_search_analytics";
 const AED_CATEGORY_ID = 160;
 
 const corsHeaders = {
@@ -108,6 +110,81 @@ function mergeHits(...groups: any[][]) {
   }
 
   return merged;
+}
+
+async function ensureSearchAnalyticsCollection() {
+  try {
+    await typesenseAdmin.collections(ANALYTICS_COLLECTION_NAME).retrieve();
+  } catch {
+    await typesenseAdmin.collections().create({
+      name: ANALYTICS_COLLECTION_NAME,
+      fields: [
+        { name: "id", type: "string" },
+        { name: "event", type: "string", facet: true },
+        { name: "query", type: "string", facet: true, optional: true },
+        { name: "sku", type: "string", facet: true, optional: true },
+        { name: "product_name", type: "string", optional: true },
+        { name: "product_id", type: "int64", optional: true },
+        { name: "customer_id", type: "string", facet: true, optional: true },
+        { name: "page_type", type: "string", facet: true, optional: true },
+        { name: "url", type: "string", optional: true },
+        { name: "created_at", type: "int64", facet: true },
+      ],
+      default_sorting_field: "created_at",
+    });
+  }
+}
+
+function scheduleAutocompleteAnalytics({
+  query,
+  customerId,
+  durationMs,
+  mappedQuery,
+}: {
+  query: string;
+  customerId: string;
+  durationMs: number;
+  mappedQuery?: string;
+}) {
+  const cleanQuery = String(query || "").trim();
+  if (!cleanQuery || cleanQuery === "*") return;
+  const cleanMappedQuery = String(mappedQuery || "").trim();
+  const speedBucket =
+    durationMs < 250 ? "autocomplete <250ms" :
+    durationMs < 500 ? "autocomplete 250-500ms" :
+    durationMs < 1000 ? "autocomplete 500-1000ms" :
+    durationMs < 2000 ? "autocomplete 1-2s" :
+    "autocomplete >2s";
+
+  after(async () => {
+    try {
+      const now = Date.now();
+      await ensureSearchAnalyticsCollection();
+      await typesenseAdmin.collections(ANALYTICS_COLLECTION_NAME).documents().create({
+        id: `${now}-${Math.random().toString(36).slice(2)}-autocomplete-speed`,
+        event: "server_autocomplete_speed",
+        query: cleanQuery.slice(0, 180),
+        product_name: speedBucket,
+        product_id: Math.max(1, Math.round(durationMs)),
+        customer_id: String(customerId || "").trim().slice(0, 80),
+        page_type: "autocomplete_api",
+        created_at: now,
+      });
+      if (cleanMappedQuery && normalizeSearchText(cleanMappedQuery) !== normalizeSearchText(cleanQuery)) {
+        await typesenseAdmin.collections(ANALYTICS_COLLECTION_NAME).documents().create({
+          id: `${now}-${Math.random().toString(36).slice(2)}-autocomplete-mapping`,
+          event: "server_query_mapping",
+          query: cleanQuery.slice(0, 180),
+          product_name: cleanMappedQuery.slice(0, 240),
+          customer_id: String(customerId || "").trim().slice(0, 80),
+          page_type: "autocomplete_api",
+          created_at: now,
+        });
+      }
+    } catch (error) {
+      console.warn("[SmartSearch analytics] could not record autocomplete timing", error);
+    }
+  });
 }
 
 function isAedUnitQuery(query: string) {
@@ -274,6 +351,7 @@ export async function OPTIONS() {
 }
 
 export async function GET(req: NextRequest) {
+  const startedAt = Date.now();
   const { searchParams } = new URL(req.url);
   const q = searchParams.get("q") || "";
   const customerId = searchParams.get("customer_id") || "";
@@ -421,19 +499,20 @@ export async function GET(req: NextRequest) {
     result.status === "fulfilled" ? result.value?.hits || [] : []
   );
 
-  const hits = applyPinnedSkuRanking(
-    applyBrandQueryRanking(
-      applyAutocompleteIvGuard(
-        applyIntentRanking(
-          applyPrivateCategoryFilter(applyHiddenSkuFilter(mergeHits(supplementalHits, results.hits || []), controls), customerId, controls),
-          q,
-          smartQuery.search_query
-        ),
+  const rankedHits = applyBrandQueryRanking(
+    applyAutocompleteIvGuard(
+      applyIntentRanking(
+        applyPrivateCategoryFilter(applyHiddenSkuFilter(mergeHits(supplementalHits, results.hits || []), controls), customerId, controls),
         q,
         smartQuery.search_query
       ),
-      q
+      q,
+      smartQuery.search_query
     ),
+    q
+  );
+  const hits = applyPinnedSkuRanking(
+    naturalLanguagePlan.active ? balanceHitsByProductFamily(rankedHits, 32) : rankedHits,
     q,
     controls
   );
@@ -454,14 +533,21 @@ export async function GET(req: NextRequest) {
     },
   ];
 
-  return NextResponse.json(
-    {
+  const responseBody = {
       products,
       facets,
       ...smartQuery,
       natural_language_plan: naturalLanguagePlan,
+      suggested_query: naturalLanguagePlan.suggested_query || smartQuery.suggested_query,
       fallback_terms: products.length ? [] : smartQuery.fallback_terms,
-    },
-    { headers: corsHeaders }
-  );
+    };
+
+  scheduleAutocompleteAnalytics({
+    query: q,
+    customerId,
+    durationMs: Date.now() - startedAt,
+    mappedQuery: naturalLanguagePlan.suggested_query || smartQuery.suggested_query,
+  });
+
+  return NextResponse.json(responseBody, { headers: corsHeaders });
 }
