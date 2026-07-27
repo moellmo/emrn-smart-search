@@ -1,6 +1,7 @@
 import { after, NextRequest, NextResponse } from "next/server";
 import { typesenseAdmin, typesenseSearch } from "../../../lib/typesense";
 import { buildSmartSearchQuery } from "../../../lib/smart-search-translator";
+import { buildNaturalLanguageSearchPlan } from "../../../lib/natural-language-search";
 import { normalizeSearchText } from "../../../lib/search-language";
 import { applyBrandQueryRanking, applyHiddenSkuFilter, applyIntentRanking, applyPinnedSkuListRanking, applyPrivateCategoryFilter, explainResult } from "../../../lib/search-ranking";
 import { getEffectiveSearchOverrides, getPinnedSkusForContext } from "../../../lib/search-overrides";
@@ -274,6 +275,22 @@ function supplementalRecallQueries(originalQuery: string, translatedQuery: strin
   return recalls.slice(0, 8);
 }
 
+function applyNaturalLanguageAvoidTermRanking(hits: any[] = [], avoidTerms: string[] = []) {
+  const normalizedAvoidTerms = avoidTerms.map((term) => normalizeSearchText(term)).filter(Boolean);
+  if (!normalizedAvoidTerms.length) return hits;
+
+  const score = (hit: any) => {
+    const doc = hit.document || {};
+    const categories = Array.isArray(doc.categories) ? doc.categories.join(" ") : String(doc.categories || "");
+    const text = normalizeSearchText(
+      [doc.name, doc.parent_name, categories, doc.search_text].filter(Boolean).join(" ")
+    );
+    return normalizedAvoidTerms.some((term) => text.includes(term)) ? -500 : 0;
+  };
+
+  return [...hits].sort((a, b) => score(b) - score(a));
+}
+
 function cleanCategoryIds(value: string | null) {
   return Array.from(
     new Set(
@@ -477,9 +494,11 @@ export async function GET(req: NextRequest) {
   const facetLimit = page === 1 ? 600 : 160;
 
   const controls = await getEffectiveSearchOverrides();
-  const smartQuery = await buildSmartSearchQuery(q);
+  const naturalLanguagePlan = await buildNaturalLanguageSearchPlan(q, controls);
+  const smartQuery = await buildSmartSearchQuery(q, { skipOpenAI: naturalLanguagePlan.active && naturalLanguagePlan.source === "manual" });
   const categoryRecallQueries = [
     q,
+    ...(naturalLanguagePlan.category_queries || []),
     ...(smartQuery.expansions || []),
     ...(smartQuery.translated_query ? [smartQuery.translated_query] : []),
     smartQuery.search_query,
@@ -505,7 +524,13 @@ export async function GET(req: NextRequest) {
   if (priceMax && !Number.isNaN(Number(priceMax))) filters.push(`price:<=${Number(priceMax)}`);
 
   const selectedCategoryTranslatedQuery = categoryIds.length > 0 && smartQuery.language === "fr" && isShortCategoryStyleQuery(q);
-  const primarySearchQuery = selectedCategoryTranslatedQuery ? "*" : smartQuery.search_query || "*";
+  const filteredNaturalLanguageQuery =
+    naturalLanguagePlan.active && (brand || category || categoryIds.length || availability || soldBy || color || priceMin || priceMax);
+  const primarySearchQuery = selectedCategoryTranslatedQuery
+    ? "*"
+    : filteredNaturalLanguageQuery
+      ? naturalLanguagePlan.rewritten_query || smartQuery.search_query || "*"
+      : smartQuery.search_query || "*";
 
   const results: any = await typesenseSearch
     .collections(COLLECTION_NAME)
@@ -599,8 +624,15 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    if (!category && !categoryIds.length) {
-      for (const recallQuery of supplementalRecallQueries(q, smartQuery.search_query)) {
+    if ((!category && !categoryIds.length) || naturalLanguagePlan.active) {
+      const recallQueries = Array.from(
+        new Set([
+          ...(naturalLanguagePlan.recall_queries || []),
+          ...supplementalRecallQueries(q, smartQuery.search_query),
+        ])
+      ).slice(0, 12);
+
+      for (const recallQuery of recallQueries) {
         supplementalSearches.push({
           kind: "recall",
           search: typesenseSearch
@@ -666,10 +698,13 @@ export async function GET(req: NextRequest) {
     const supplementalHits = fulfilledSupplementalResults.flatMap((result) => result?.hits || []);
 
     const rankedHits = applyBrandQueryRanking(
-      applyIntentRanking(
-        applyPrivateCategoryFilter(applyHiddenSkuFilter(mergeHits(supplementalHits, results.hits), controls), customerId, controls),
-        q,
-        smartQuery.search_query
+      applyNaturalLanguageAvoidTermRanking(
+        applyIntentRanking(
+          applyPrivateCategoryFilter(applyHiddenSkuFilter(mergeHits(supplementalHits, results.hits), controls), customerId, controls),
+          q,
+          smartQuery.search_query
+        ),
+        naturalLanguagePlan.avoid_terms
       ),
       q
     );
@@ -717,6 +752,7 @@ export async function GET(req: NextRequest) {
     ...smartQuery,
     fallback_terms: results.hits?.length ? [] : smartQuery.fallback_terms,
     pinned_skus: responsePinnedSkus,
+    natural_language_plan: naturalLanguagePlan,
     active_filters: {
       brand,
       category,

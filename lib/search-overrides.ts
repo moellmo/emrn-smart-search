@@ -13,6 +13,12 @@ export type PrivateCategoryRule = {
   allowedCustomerIds: string[];
 };
 
+export type NaturalLanguageRule = {
+  categoryQueries: string[];
+  recallQueries: string[];
+  avoidTerms: string[];
+};
+
 export type SearchOverrides = {
   redirects: SearchRedirect[];
   pinnedSkus: Record<string, string[]>;
@@ -23,6 +29,7 @@ export type SearchOverrides = {
   privateCategoryRules: PrivateCategoryRule[];
   boostTerms: Record<string, string[]>;
   noResultsSuggestions: Record<string, string[]>;
+  naturalLanguageRules: Record<string, NaturalLanguageRule>;
 };
 
 export const defaultSearchOverrides: SearchOverrides = {
@@ -108,6 +115,8 @@ export const defaultSearchOverrides: SearchOverrides = {
     "shower chair": ["bath bench", "bath chair", "transfer bench"],
     "fauteuil de douche": ["shower chair", "bath bench", "transfer bench"],
   },
+
+  naturalLanguageRules: {},
 };
 
 const CONTROLS_COLLECTION = "emrn_search_controls";
@@ -165,6 +174,24 @@ function cleanNumberList(values: unknown) {
   );
 }
 
+function cleanNaturalLanguageRules(map: unknown) {
+  const output: Record<string, NaturalLanguageRule> = {};
+  if (!map || typeof map !== "object" || Array.isArray(map)) return output;
+
+  for (const [key, value] of Object.entries(map)) {
+    const cleanKey = String(key || "").trim();
+    if (!cleanKey || !value || typeof value !== "object" || Array.isArray(value)) continue;
+    const rule = value as Partial<NaturalLanguageRule>;
+    output[cleanKey] = {
+      categoryQueries: cleanStringList(rule.categoryQueries),
+      recallQueries: cleanStringList(rule.recallQueries),
+      avoidTerms: cleanStringList(rule.avoidTerms),
+    };
+  }
+
+  return output;
+}
+
 function cleanPrivateCategoryRules(values: unknown): PrivateCategoryRule[] {
   if (!Array.isArray(values)) return [];
 
@@ -198,6 +225,7 @@ export function sanitizeSearchOverrides(input: Partial<SearchOverrides> | null |
     privateCategoryRules: cleanPrivateCategoryRules(input?.privateCategoryRules),
     boostTerms: cleanStringMap(input?.boostTerms),
     noResultsSuggestions: cleanStringMap(input?.noResultsSuggestions),
+    naturalLanguageRules: cleanNaturalLanguageRules(input?.naturalLanguageRules),
   };
 }
 
@@ -232,6 +260,10 @@ export function mergeSearchOverrides(runtime?: Partial<SearchOverrides> | null):
       ...defaultSearchOverrides.noResultsSuggestions,
       ...cleanRuntime.noResultsSuggestions,
     },
+    naturalLanguageRules: {
+      ...defaultSearchOverrides.naturalLanguageRules,
+      ...cleanRuntime.naturalLanguageRules,
+    },
   };
 }
 
@@ -254,10 +286,10 @@ export async function getRuntimeSearchOverrides() {
   await ensureControlsCollection();
 
   try {
-    const doc: any = await typesenseAdmin
+    const doc = await typesenseAdmin
       .collections(CONTROLS_COLLECTION)
       .documents(CONTROLS_DOC_ID)
-      .retrieve();
+      .retrieve() as { config_json?: string };
 
     return sanitizeSearchOverrides(JSON.parse(doc.config_json || "{}"));
   } catch {

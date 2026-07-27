@@ -149,7 +149,7 @@ async function translateWithOpenAI(query: string, language: "en" | "fr") {
   }
 }
 
-export async function buildSmartSearchQuery(query: string): Promise<SmartQueryResult> {
+export async function buildSmartSearchQuery(query: string, options: { skipOpenAI?: boolean } = {}): Promise<SmartQueryResult> {
   const original = cleanSearchQuery(query || "*");
   const cacheKey = original.toLowerCase();
   const controls = await getEffectiveSearchOverrides();
@@ -181,7 +181,8 @@ export async function buildSmartSearchQuery(query: string): Promise<SmartQueryRe
     original.length >= 3 &&
     !manual.expansions.length &&
     looksNaturalLanguage &&
-    language === "fr";
+    language === "fr" &&
+    !options.skipOpenAI;
 
   if (shouldUseAI) {
     const ai = await translateWithOpenAI(original, language);

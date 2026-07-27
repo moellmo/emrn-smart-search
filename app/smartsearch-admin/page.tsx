@@ -15,6 +15,12 @@ type PrivateCategoryRule = {
   allowedCustomerIds: string[];
 };
 
+type NaturalLanguageRule = {
+  categoryQueries: string[];
+  recallQueries: string[];
+  avoidTerms: string[];
+};
+
 type SearchOverrides = {
   redirects: SearchRedirect[];
   pinnedSkus: Record<string, string[]>;
@@ -25,6 +31,7 @@ type SearchOverrides = {
   privateCategoryRules: PrivateCategoryRule[];
   boostTerms: Record<string, string[]>;
   noResultsSuggestions: Record<string, string[]>;
+  naturalLanguageRules: Record<string, NaturalLanguageRule>;
 };
 
 type PinScope = "query" | "brand" | "category" | "category_id";
@@ -69,6 +76,7 @@ const blankControls: SearchOverrides = {
   privateCategoryRules: [],
   boostTerms: {},
   noResultsSuggestions: {},
+  naturalLanguageRules: {},
 };
 
 function splitCsv(value: string) {
@@ -129,6 +137,29 @@ function formatDuration(ms?: number) {
   return `${Math.floor(seconds / 60)} min ${seconds % 60} sec`;
 }
 
+function parseNaturalLanguageRulesJson(value: string) {
+  try {
+    const parsed = JSON.parse(value || "{}");
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed as Record<string, NaturalLanguageRule> : {};
+  } catch {
+    return {};
+  }
+}
+
+function validateNaturalLanguageRulesJson(value: string) {
+  try {
+    const parsed = JSON.parse(value || "{}");
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return false;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function formatNaturalLanguageRules(rules: Record<string, NaturalLanguageRule> = {}) {
+  return JSON.stringify(rules, null, 2);
+}
+
 export default function SmartSearchAdminPage() {
   const [password, setPassword] = useState(() => {
     try {
@@ -156,6 +187,7 @@ export default function SmartSearchAdminPage() {
   const [categoryIdPinnedRows, setCategoryIdPinnedRows] = useState<Array<{ term: string; values: string }>>([]);
   const [boostRows, setBoostRows] = useState<Array<{ term: string; values: string }>>([]);
   const [noResultsRows, setNoResultsRows] = useState<Array<{ term: string; values: string }>>([]);
+  const [naturalLanguageRulesJson, setNaturalLanguageRulesJson] = useState("{}");
   const [bulkRules, setBulkRules] = useState("");
   const [twoWaySynonyms, setTwoWaySynonyms] = useState(true);
   const [reindexStatus, setReindexStatus] = useState<ReindexStatus | null>(null);
@@ -199,8 +231,9 @@ export default function SmartSearchAdminPage() {
         .filter((row) => row.categoryIds.length || row.categoryNames.length),
       boostTerms: twoWaySynonyms ? rowsToBidirectionalMap(boostRows) : rowsToMap(boostRows),
       noResultsSuggestions: rowsToMap(noResultsRows),
+      naturalLanguageRules: parseNaturalLanguageRulesJson(naturalLanguageRulesJson),
     }),
-    [redirects, pinnedRows, brandPinnedRows, categoryPinnedRows, categoryIdPinnedRows, boostRows, noResultsRows, hiddenSkus, privateCategoryRows, twoWaySynonyms]
+    [redirects, pinnedRows, brandPinnedRows, categoryPinnedRows, categoryIdPinnedRows, boostRows, noResultsRows, naturalLanguageRulesJson, hiddenSkus, privateCategoryRows, twoWaySynonyms]
   );
 
   function savePasswordPreference(value: string, remember: boolean) {
@@ -247,6 +280,7 @@ export default function SmartSearchAdminPage() {
     setCategoryIdPinnedRows(mapToRows(controls.categoryIdPinnedSkus));
     setBoostRows(mapToRows(controls.boostTerms));
     setNoResultsRows(mapToRows(controls.noResultsSuggestions));
+    setNaturalLanguageRulesJson(formatNaturalLanguageRules(controls.naturalLanguageRules));
     setHiddenSkus(joinCsv(controls.hiddenSkus));
     setPrivateCategoryRows(
       (controls.privateCategoryRules || []).map((rule) => ({
@@ -264,6 +298,11 @@ export default function SmartSearchAdminPage() {
   }
 
   async function saveControls() {
+    if (!validateNaturalLanguageRulesJson(naturalLanguageRulesJson)) {
+      setStatus("Natural language rules must be valid JSON before saving.");
+      return;
+    }
+
     setStatus("Saving...");
     const res = await fetch("/api/search-controls", {
       method: "POST",
@@ -290,6 +329,7 @@ export default function SmartSearchAdminPage() {
     setCategoryIdPinnedRows(mapToRows(saved.categoryIdPinnedSkus));
     setBoostRows(mapToRows(saved.boostTerms));
     setNoResultsRows(mapToRows(saved.noResultsSuggestions));
+    setNaturalLanguageRulesJson(formatNaturalLanguageRules(saved.naturalLanguageRules));
     setHiddenSkus(joinCsv(saved.hiddenSkus));
     setPrivateCategoryRows(
       (saved.privateCategoryRules || []).map((rule) => ({
@@ -887,6 +927,18 @@ export default function SmartSearchAdminPage() {
             </p>
             <Rows rows={boostRows} setRows={setBoostRows} leftLabel="Keyword" rightLabel="Synonyms, comma separated" />
             <SavedRules title="Saved synonyms" map={savedRuntime.boostTerms} emptyText="No saved synonyms yet." />
+          </Panel>
+
+          <Panel title="Natural Language Rules" help="Editable broad-query planner rules. A saved phrase here overrides the built-in mapping for that phrase. Use categoryQueries for category recall, recallQueries for product terms, and avoidTerms to push wrong literal matches down.">
+            <textarea
+              value={naturalLanguageRulesJson}
+              onChange={(event) => setNaturalLanguageRulesJson(event.target.value)}
+              placeholder={'{\n  "clinic supplies": {\n    "categoryQueries": ["Nursing Supplies", "Diagnostics", "Wound Care"],\n    "recallQueries": ["exam gloves", "otoscope", "blood pressure cuff"],\n    "avoidTerms": ["office binder", "copy paper"]\n  }\n}'}
+              style={{ ...textareaStyle, minHeight: 260, fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", fontSize: 13 }}
+            />
+            <p style={{ margin: "10px 0 0", color: validateNaturalLanguageRulesJson(naturalLanguageRulesJson) ? "#166534" : "#b91c1c", fontWeight: 800 }}>
+              {validateNaturalLanguageRulesJson(naturalLanguageRulesJson) ? "JSON is valid." : "JSON has an error."}
+            </p>
           </Panel>
 
           <Panel title="No-Results Suggestions" help="Suggestions to show when a search has no results.">
