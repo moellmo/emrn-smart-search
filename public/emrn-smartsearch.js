@@ -278,19 +278,21 @@
   function goToFilteredResults(type,value){const q=new URLSearchParams(window.location.search).get("search_query")||activeInput?.value||"";const url=new URL(config.searchResultsUrl,window.location.origin);url.searchParams.set("search_query",q||"*");url.searchParams.set(config.resultsParam,"1");preserveListingFilters(url,type);if(type&&value)url.searchParams.set(type,value);window.location.href=url.toString()}
   function hasActiveSearchQuery(){const params=new URLSearchParams(window.location.search);const q=String(params.get("search_query")||params.get("q")||"").trim();return isResultsPage&&q&&q!=="*"}
   function categoryById(categoryId){const id=Number(categoryId||0);return (categoryTreeCache?.cats||[]).find(cat=>Number(cat.id)===id)||null}
-  function navigateDirectCategory(category){const path=category?.url?normalizeUrl(category.url):"";if(!path)return false;const url=new URL(path,window.location.origin);url.searchParams.delete("search_query");url.searchParams.delete("q");url.searchParams.delete(config.resultsParam);url.searchParams.delete("category");url.searchParams.delete("category_id");const currentBrand=new URLSearchParams(window.location.search).get("brand")||configuredBrandName||"";if(currentBrand&&!url.searchParams.get("brand"))url.searchParams.set("brand",currentBrand);hideOverlay();window.location.href=url.toString();return true}
-  function goToCategoryId(id,name=""){const category=categoryById(id)||categoryByName(name);if(navigateDirectCategory(category))return;const url=new URL(config.searchResultsUrl,window.location.origin);url.searchParams.set("search_query","*");url.searchParams.set(config.resultsParam,"1");preserveListingFilters(url,"category_id");if(configuredBrandName&&!url.searchParams.get("brand"))url.searchParams.set("brand",configuredBrandName);url.searchParams.delete("category");if(name)url.searchParams.set("category",String(name).trim());url.searchParams.set("category_id",id);window.location.href=url.toString()}
-  function goToFullCategoryId(id,name=""){const category=categoryById(id)||categoryByName(name);if(navigateDirectCategory(category))return;const url=new URL(config.searchResultsUrl,window.location.origin);url.searchParams.set("search_query","*");url.searchParams.set(config.resultsParam,"1");if(name)url.searchParams.set("category",String(name).trim());url.searchParams.set("category_id",id);window.location.href=url.toString()}
-  function goToFullCategoryName(name){const clean=String(name||"").trim();if(!clean)return;const category=categoryByName(clean);if(navigateDirectCategory(category))return;const url=new URL(config.searchResultsUrl,window.location.origin);url.searchParams.set("search_query","*");url.searchParams.set(config.resultsParam,"1");url.searchParams.set("category",clean);window.location.href=url.toString()}
-  function goToDirectCategoryUrl(path){const url=new URL(path||"/",window.location.origin);url.searchParams.delete("search_query");url.searchParams.delete("q");url.searchParams.delete(config.resultsParam);url.searchParams.delete("category");url.searchParams.delete("category_id");const currentBrand=new URLSearchParams(window.location.search).get("brand")||configuredBrandName||"";if(currentBrand&&!url.searchParams.get("brand"))url.searchParams.set("brand",currentBrand);hideOverlay();window.location.href=url.toString()}
+  function cleanCategoryUrl(path,categoryId="",categoryName=""){const url=new URL(path||"/",window.location.origin);url.searchParams.delete("search_query");url.searchParams.delete("q");url.searchParams.delete(config.resultsParam);if(categoryId)url.searchParams.set("category_id",String(categoryId));else url.searchParams.delete("category_id");if(categoryName)url.searchParams.set("category",String(categoryName).trim());else url.searchParams.delete("category");const currentBrand=new URLSearchParams(window.location.search).get("brand")||configuredBrandName||"";if(currentBrand&&!url.searchParams.get("brand"))url.searchParams.set("brand",currentBrand);return url}
+  function navigateDirectCategory(category,categoryId="",categoryName=""){const path=category?.url?normalizeUrl(category.url):"";if(!path)return false;hideOverlay();window.location.href=cleanCategoryUrl(path,categoryId||category?.id||"",categoryName||category?.name||"").toString();return true}
+  function goToCategoryId(id,name=""){const category=categoryById(id)||categoryByName(name);if(navigateDirectCategory(category,id,name))return;const url=new URL(config.searchResultsUrl,window.location.origin);url.searchParams.set("search_query","*");url.searchParams.set(config.resultsParam,"1");preserveListingFilters(url,"category_id");if(configuredBrandName&&!url.searchParams.get("brand"))url.searchParams.set("brand",configuredBrandName);url.searchParams.delete("category");if(name)url.searchParams.set("category",String(name).trim());url.searchParams.set("category_id",id);window.location.href=url.toString()}
+  function goToFullCategoryId(id,name=""){const category=categoryById(id)||categoryByName(name);if(navigateDirectCategory(category,id,name))return;const url=new URL(config.searchResultsUrl,window.location.origin);url.searchParams.set("search_query","*");url.searchParams.set(config.resultsParam,"1");if(name)url.searchParams.set("category",String(name).trim());url.searchParams.set("category_id",id);window.location.href=url.toString()}
+  function goToFullCategoryName(name){const clean=String(name||"").trim();if(!clean)return;const category=categoryByName(clean);if(navigateDirectCategory(category,category?.id||"",clean))return;const url=new URL(config.searchResultsUrl,window.location.origin);url.searchParams.set("search_query","*");url.searchParams.set(config.resultsParam,"1");url.searchParams.set("category",clean);window.location.href=url.toString()}
+  function goToDirectCategoryUrl(path){hideOverlay();window.location.href=cleanCategoryUrl(path||"/").toString()}
 
   async function loadCategoryTree(){if(categoryTreeCache)return categoryTreeCache;try{const params=appendCustomerParam(new URLSearchParams());const query=params.toString();const res=await fetch(`${config.apiBase}/api/category-tree${query?`?${query}`:""}`,{mode:"cors"});const data=await res.json();const cats=data.categories||[];const byParent=new Map();cats.forEach(cat=>{const parent=Number(cat.parent_id||0);cat.product_count=Number(cat.product_count||cat.count||0);if(!byParent.has(parent))byParent.set(parent,[]);byParent.get(parent).push(cat)});categoryTreeCache={cats,byParent};return categoryTreeCache}catch(err){console.error("[EMRN SmartSearch] category tree error",err);return {cats:[],byParent:new Map()}}}
   function categoryBranchIds(categoryId){const id=Number(categoryId||0);if(!id)return[];const ids=[];const visit=(nextId)=>{if(!nextId||ids.includes(Number(nextId)))return;ids.push(Number(nextId));(categoryTreeCache?.byParent.get(Number(nextId))||[]).forEach(child=>visit(child.id))};const selected=(categoryTreeCache?.cats||[]).find(cat=>Number(cat.id)===id);const selectedName=String(selected?.name||"").toLowerCase();(categoryTreeCache?.cats||[]).filter(cat=>selectedName&&String(cat.name||"").toLowerCase()===selectedName).forEach(cat=>visit(cat.id));visit(id);return ids}
-  function buildRelevantCategoryHelpers(categoryFacetCounts=[],selectedId=0,selectedName="",useScopedCounts=false){
+  function buildRelevantCategoryHelpers(categoryFacetCounts=[],categoryIdFacetCounts=[],selectedId=0,selectedName="",useScopedCounts=false){
     const countByName=new Map((categoryFacetCounts||[]).map(item=>[String(item.value||"").toLowerCase(),Number(item.count||0)]));
+    const countById=new Map((categoryIdFacetCounts||[]).map(item=>[Number(item.value||0),Number(item.count||0)]).filter(([id])=>Boolean(id)));
     const catalogCountByName=new Map((categoryTreeCache?.cats||[]).map(cat=>[String(cat.name||"").toLowerCase(),Number(cat.product_count||0)]));
     const visibleIds=new Set();
-    const hasOwnCount=(cat)=>{const key=String(cat.name||"").toLowerCase();return useScopedCounts?countByName.has(key):Boolean((catalogCountByName.get(key)||0)||countByName.has(key))};
+    const hasOwnCount=(cat)=>{const key=String(cat.name||"").toLowerCase();const id=Number(cat.id||0);return useScopedCounts?(countById.has(id)||countByName.has(key)):Boolean((catalogCountByName.get(key)||0)||countById.has(id)||countByName.has(key))};
     const byId=new Map((categoryTreeCache?.cats||[]).map(cat=>[Number(cat.id),cat]));
 
     function markAncestors(cat){
@@ -322,7 +324,7 @@
           markCatalogBranch(selected);
         }
       }
-      return {visibleIds,countByName,catalogCountByName,useScopedCounts};
+      return {visibleIds,countByName,countById,catalogCountByName,useScopedCounts};
     }
 
     function markDescendantsWithResults(cat){
@@ -341,10 +343,10 @@
 
     (categoryTreeCache?.cats||[]).forEach(cat=>markDescendantsWithResults(cat));
 
-    return {visibleIds,countByName,catalogCountByName,useScopedCounts};
+    return {visibleIds,countByName,countById,catalogCountByName,useScopedCounts};
   }
 
-  function renderCategoryBranch(parentId,level=0,selectedId=0,selectedName="",helpers={visibleIds:new Set(),countByName:new Map(),catalogCountByName:new Map()}){
+  function renderCategoryBranch(parentId,level=0,selectedId=0,selectedName="",helpers={visibleIds:new Set(),countByName:new Map(),countById:new Map(),catalogCountByName:new Map()}){
     if(!categoryTreeCache)return"";
     const children=(categoryTreeCache.byParent.get(Number(parentId))||[])
       .filter(cat=>helpers.visibleIds.has(Number(cat.id)))
@@ -352,13 +354,14 @@
 
     function branchCount(cat){
       const key=String(cat.name||"").toLowerCase();
-      const filteredCount=helpers.countByName.get(key)||0;
+      const id=Number(cat.id||0);
+      const filteredCount=helpers.countById.get(id)||helpers.countByName.get(key)||0;
       const catalogCount=helpers.catalogCountByName.get(key)||0;
       const direct=helpers.useScopedCounts?filteredCount:catalogCount||filteredCount;
-      if(direct)return direct;
-      return (categoryTreeCache.byParent.get(Number(cat.id))||[])
+      const childTotal=(categoryTreeCache.byParent.get(Number(cat.id))||[])
         .filter(child=>helpers.visibleIds.has(Number(child.id)))
         .reduce((sum,child)=>sum+branchCount(child),0);
+      return helpers.useScopedCounts?direct+childTotal:direct||childTotal;
     }
 
     return children.map(cat=>{
@@ -371,12 +374,12 @@
 
   function filterToggleButton(){return `<button type="button" class="emrn-smart-filter-toggle" data-filter-toggle>Show filters</button>`}
 
-  function renderCategoryTree(selectedId,selectedName="",categoryFacetCounts=[]){
+  function renderCategoryTree(selectedId,selectedName="",categoryFacetCounts=[],categoryIdFacetCounts=[]){
     const params=new URLSearchParams(window.location.search);
     const q=String(params.get("search_query")||params.get("q")||"").trim();
     const isTypedSearch=Boolean(q&&q!=="*");
     const useScopedCounts=Boolean(isTypedSearch||params.get("brand")||params.get("sold_by")||params.get("color")||shouldReplaceBrand&&configuredBrandName);
-    const helpers=buildRelevantCategoryHelpers(categoryFacetCounts,selectedId,selectedName,useScopedCounts);
+    const helpers=buildRelevantCategoryHelpers(categoryFacetCounts,categoryIdFacetCounts,selectedId,selectedName,useScopedCounts);
     const tree=renderCategoryBranch(0,0,selectedId,selectedName,helpers);
     if(!tree)return "";
     return `<div class="emrn-smart-filter-group"><h3>${t("categories")}</h3><div class="emrn-smart-category-tree">${tree}</div></div>`;
@@ -396,6 +399,7 @@
         if(toggle)toggle.textContent="−";
         parent=parent.parentElement?.closest(".emrn-smart-cat-children")
       }
+      setTimeout(()=>{try{row.scrollIntoView({block:"center",inline:"nearest",behavior:"smooth"})}catch{}},50)
     })
   }
 
@@ -557,8 +561,8 @@
       const products=(data.hits||[]).map((hit)=>hit.document);
       const found=Number(data.found||products.length||0);
       if(q&&q!=="*")trackSmartSearchEvent(products.length?"results_view":"no_results",{query:q});
-      const brandFacet=(data.facet_counts||[]).find((facet)=>facet.field_name==="brand")?.counts||[];const categoryFacet=(data.facet_counts||[]).find((facet)=>facet.field_name==="categories")?.counts||[];const soldByFacet=(data.facet_counts||[]).find((facet)=>facet.field_name==="sold_by")?.counts||[];const colorFacet=(data.facet_counts||[]).find((facet)=>facet.field_name==="color")?.counts||[];const priceFacet=(data.facet_counts||[]).find((facet)=>facet.field_name==="price");
-      shell.innerHTML=`${compactListing?"":`<div class="emrn-smart-results-header"><div class="eyebrow">EMRN SmartSearch</div><h1>${title}</h1><p>${found||products.length} ${t("skuLevelShown")}${brand?` • ${escapeHtml(brand)}`:""}${category?` • ${escapeHtml(category)}`:""}</p><div class="emrn-smart-results-search"><input value="${escapeHtml(q==="*"?"":q)}" placeholder="${t("searchPlaceholder")}" data-smart-results-input><button type="button" data-smart-results-search>${t("searchButton")}</button></div></div>`}${filterToggleButton()}<div class="emrn-smart-results-shell"><aside class="emrn-smart-results-filters"><div class="emrn-smart-filter-title">${t("refineBy")}</div><div class="emrn-smart-filter-note">${brand||category||categoryId?t("filtersApplied"):t("chooseBrandCategory")}</div>${isResultsPage&&(brand||category||categoryId)?`<button type="button" class="emrn-smart-viewall" data-clear-filters>${t("clearFilters")}</button>`:""}${renderCategoryTree(categoryId,category,categoryFacet)}${facetGroup(t("brands"),brandFacet,"brand")}${facetGroup("Sold By",soldByFacet,"sold_by")}${facetGroup("Color",colorFacet,"color")}${priceFilter(priceFacet,products,priceMin,priceMax)}</aside><div class="emrn-smart-results-main">${relatedCategoryBubbles(categoryFacet,products,category)}<div class="emrn-smart-results-top"><div><h2>${t("products")}</h2><p><span data-results-count>${products.length}</span> / ${found||products.length} ${t("skuLevelShown")}</p></div>${sortSelect(sort)}</div>${products.length?`<div class="emrn-smart-products-grid" data-products-grid>${products.map(productCard).join("")}</div>${renderLoadMore(found,products.length,1)}`:noResultsBox(data,q)}</div></div>`;
+      const brandFacet=(data.facet_counts||[]).find((facet)=>facet.field_name==="brand")?.counts||[];const categoryFacet=(data.facet_counts||[]).find((facet)=>facet.field_name==="categories")?.counts||[];const categoryIdFacet=(data.facet_counts||[]).find((facet)=>facet.field_name==="category_ids")?.counts||[];const soldByFacet=(data.facet_counts||[]).find((facet)=>facet.field_name==="sold_by")?.counts||[];const colorFacet=(data.facet_counts||[]).find((facet)=>facet.field_name==="color")?.counts||[];const priceFacet=(data.facet_counts||[]).find((facet)=>facet.field_name==="price");
+      shell.innerHTML=`${compactListing?"":`<div class="emrn-smart-results-header"><div class="eyebrow">EMRN SmartSearch</div><h1>${title}</h1><p>${found||products.length} ${t("skuLevelShown")}${brand?` • ${escapeHtml(brand)}`:""}${category?` • ${escapeHtml(category)}`:""}</p><div class="emrn-smart-results-search"><input value="${escapeHtml(q==="*"?"":q)}" placeholder="${t("searchPlaceholder")}" data-smart-results-input><button type="button" data-smart-results-search>${t("searchButton")}</button></div></div>`}${filterToggleButton()}<div class="emrn-smart-results-shell"><aside class="emrn-smart-results-filters"><div class="emrn-smart-filter-title">${t("refineBy")}</div><div class="emrn-smart-filter-note">${brand||category||categoryId?t("filtersApplied"):t("chooseBrandCategory")}</div>${isResultsPage&&(brand||category||categoryId)?`<button type="button" class="emrn-smart-viewall" data-clear-filters>${t("clearFilters")}</button>`:""}${renderCategoryTree(categoryId,category,categoryFacet,categoryIdFacet)}${facetGroup(t("brands"),brandFacet,"brand")}${facetGroup("Sold By",soldByFacet,"sold_by")}${facetGroup("Color",colorFacet,"color")}${priceFilter(priceFacet,products,priceMin,priceMax)}</aside><div class="emrn-smart-results-main">${relatedCategoryBubbles(categoryFacet,products,category)}<div class="emrn-smart-results-top"><div><h2>${t("products")}</h2><p><span data-results-count>${products.length}</span> / ${found||products.length} ${t("skuLevelShown")}</p></div>${sortSelect(sort)}</div>${products.length?`<div class="emrn-smart-products-grid" data-products-grid>${products.map(productCard).join("")}</div>${renderLoadMore(found,products.length,1)}`:noResultsBox(data,q)}</div></div>`;
       stripObjectObjectText(shell);
       expandActiveCategoryTree();
     }catch(err){

@@ -762,7 +762,7 @@ export async function GET(req: NextRequest) {
         "sku,all_skus,name,parent_name,brand,sold_by,categories,variant_label,option_text,search_text,description,custom_fields_text",
       query_by_weights: "30,24,16,12,8,7,7,6,6,4,2,2",
       filter_by: filters.join(" && "),
-      facet_by: "brand,categories,sold_by,color,price,availability",
+      facet_by: "brand,categories,category_ids,sold_by,color,price,availability",
       max_facet_values: facetLimit,
       sort_by: normalizeSort(sort),
       per_page: primaryFetchSize,
@@ -789,7 +789,7 @@ export async function GET(req: NextRequest) {
             query_by: "sku,all_skus",
             query_by_weights: "30,24",
             filter_by: supplementalBase,
-            facet_by: "brand,categories,sold_by,color,price,availability",
+            facet_by: "brand,categories,category_ids,sold_by,color,price,availability",
             max_facet_values: facetLimit,
             sort_by: normalizeSort(sort),
             per_page: 4,
@@ -812,7 +812,7 @@ export async function GET(req: NextRequest) {
               q: "*",
               query_by: "sku,all_skus,name,parent_name,brand,categories,search_text",
               filter_by: [supplementalBase, `category_ids:=[${AED_CATEGORY_ID}]`].filter(Boolean).join(" && "),
-              facet_by: "brand,categories,sold_by,color,price,availability",
+              facet_by: "brand,categories,category_ids,sold_by,color,price,availability",
               max_facet_values: facetLimit,
               sort_by: normalizeSort(sort),
               per_page: supplementalFetchSize,
@@ -834,7 +834,7 @@ export async function GET(req: NextRequest) {
               q: "*",
               query_by: "sku,all_skus,name,parent_name,brand,categories,search_text",
               filter_by: [supplementalBase, `category_ids:=[${categoryFamilyIds.join(",")}]`].filter(Boolean).join(" && "),
-              facet_by: "brand,categories,sold_by,color,price,availability",
+              facet_by: "brand,categories,category_ids,sold_by,color,price,availability",
               max_facet_values: facetLimit,
               sort_by: normalizeSort(sort),
               per_page: supplementalFetchSize,
@@ -865,7 +865,7 @@ export async function GET(req: NextRequest) {
                 "sku,all_skus,name,parent_name,brand,sold_by,categories,variant_label,option_text,search_text,description,custom_fields_text",
               query_by_weights: "30,24,16,12,8,7,7,6,6,4,2,2",
               filter_by: supplementalBase,
-              facet_by: "brand,categories,sold_by,color,price,availability",
+              facet_by: "brand,categories,category_ids,sold_by,color,price,availability",
               max_facet_values: Math.min(facetLimit, 300),
               sort_by: normalizeSort(sort),
               per_page: supplementalFetchSize,
@@ -891,7 +891,7 @@ export async function GET(req: NextRequest) {
               query_by: "brand",
               query_by_weights: "10",
               filter_by: supplementalBase,
-              facet_by: "brand,categories,sold_by,color,price,availability",
+              facet_by: "brand,categories,category_ids,sold_by,color,price,availability",
               max_facet_values: facetLimit,
               sort_by: normalizeSort(sort),
               per_page: supplementalFetchSize,
@@ -947,7 +947,7 @@ export async function GET(req: NextRequest) {
           ? categoryFamilyResult
           : results;
       results.facet_counts = nonCategoryFamilyResults.length
-        ? ["brand", "categories", "sold_by", "color", "price", "availability"].map((field) =>
+        ? ["brand", "categories", "category_ids", "sold_by", "color", "price", "availability"].map((field) =>
             mergeFacetCounts(field, facetBase, ...nonCategoryFamilyResults)
           )
         : facetBase.facet_counts;
