@@ -5,7 +5,7 @@ const COLLECTION_NAME = "emrn_search_analytics";
 
 function corsHeaders(req: NextRequest) {
   const origin = req.headers.get("origin") || "";
-  const allowedOrigin = ["https://emrn.ca", "https://www.emrn.ca", "http://localhost:3000"].includes(origin)
+  const allowedOrigin = ["https://emrn.ca", "https://www.emrn.ca", "http://localhost:3000"].includes(origin) || /^https:\/\/store-[a-z0-9-]+\.mybigcommerce\.com$/i.test(origin)
     ? origin
     : "https://emrn.ca";
 
