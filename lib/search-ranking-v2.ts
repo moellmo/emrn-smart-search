@@ -58,6 +58,11 @@ const combinationProductSignals = [
   "flush", "prefilled", "convenience", "tray", "bundle", "kit", "device",
 ];
 
+const specialtySyringeSignals = [
+  "bulb", "ear/ulcer", "insulin", "oral", "irrigation", "flush", "prefilled", "atomization",
+  "vial access", "dual cannula", "convenience", "training",
+];
+
 const mainEquipmentTerms = [
   "aed", "defibrillator", "defibrillators", "patient monitor", "patient monitors", "vital signs monitor",
   "monitor", "monitors", "ecg machine", "ekg machine", "wheelchair", "stretcher", "oxygen concentrator",
@@ -124,9 +129,20 @@ function phraseIn(text: string, phrase: string) {
 }
 
 function specificAttributeTerms(query: string) {
-  const normalized = normalizeSearchText(query);
-  const terms = normalized.match(/\b(?:x[- ]?small|small|medium|large|x[- ]?large|\d+(?:\.\d+)?\s*(?:ml|cc|g|ga|gauge|mm))\b|\b\d+\s*x\s*\d+\b/g) || [];
-  return Array.from(new Set(terms.map((term) => term.replace(/\s+/g, "").replace(/-/g, ""))));
+  const normalized = normalizeSearchText(query)
+    .replace(/\b(?:grand|grands|grande|grandes)\b/g, "large")
+    .replace(/\b(?:petit|petite|petits|petites)\b/g, "small")
+    .replace(/\b(?:moyen|moyenne|moyens|moyennes)\b/g, "medium");
+  const terms = normalized.match(/\b(?:x[- ]?small|small|medium|large|x[- ]?large|grand|grands|grande|grandes|petit|petite|petits|petites|moyen|moyenne|moyens|moyennes|\d+(?:\.\d+)?\s*(?:ml|cc|g|ga|gauge|mm))\b|\b\d+\s*x\s*\d+\b/g) || [];
+  const sizeAliases: Record<string, string> = {
+    grand: "large", grands: "large", grande: "large", grandes: "large",
+    petit: "small", petite: "small", petits: "small", petites: "small",
+    moyen: "medium", moyenne: "medium", moyens: "medium", moyennes: "medium",
+  };
+  return Array.from(new Set(terms.map((term) => {
+    const compact = term.replace(/\s+/g, "").replace(/-/g, "");
+    return sizeAliases[compact] || compact;
+  })));
 }
 
 function hasSpecificAttributeQuery(query: string) {
@@ -206,7 +222,7 @@ function fieldScore(hit: SearchHit, originalQuery: string, searchQuery: string, 
     const requestedSize = requestedAttributes.find((term) => /^(x?small|medium|large|x?large)$/.test(term));
     if (requestedSize) {
       const listedSizes = attributeText.match(/x?small|medium|large|x?large/g) || [];
-      if (listedSizes.some((size) => size !== requestedSize && !size.includes(requestedSize))) score -= 1100;
+      if (listedSizes.some((size) => size !== requestedSize)) score -= 1100;
     }
   }
 
@@ -217,7 +233,7 @@ function fieldScore(hit: SearchHit, originalQuery: string, searchQuery: string, 
     for (const material of requestedMaterials) {
       if (materialText.includes(material)) score += 800;
       for (const other of materialTerms) {
-        if (other !== material && materialText.includes(other)) score -= 2200;
+        if (other !== material && materialText.includes(other)) score -= 5000;
       }
     }
   }
@@ -296,6 +312,7 @@ function fieldScore(hit: SearchHit, originalQuery: string, searchQuery: string, 
   }
 
   const normalizedOriginal = normalizeSearchText(originalQuery);
+  const requestedNeedleFree = /\b(?:needle[- ]?free|without\s+(?:the\s+)?needles?|no\s+(?:the\s+)?needles?)\b/.test(original);
   for (const pair of rolePairs) {
     const primaryRequested = pair.primary.some((term) =>
       normalizedOriginal.includes(normalizeSearchText(term)) &&
@@ -313,7 +330,37 @@ function fieldScore(hit: SearchHit, originalQuery: string, searchQuery: string, 
     const hasCombinationCategory = /\b(?:syringe|syringes)\s+with\s+needles?\b|\bwith\s+needles?\b|\bneedles?\s+with\s+syringes?\b/.test(categories);
     const hasRelated = pair.related.some((term) => hasTerm(title, term)) || (hasCombinationCategory && hasPrimaryInTitle);
     const hasRelatedInTitle = pair.related.some((term) => hasTerm(title, term));
+    const hasExactPrimaryCategory = pair.primary.some((term) => {
+      const singularTerm = singular(term);
+      return categories.split(/\s+/).some((category) => category === term || category === singularTerm);
+    });
+    const needleCollectionCategory = pair.primary.some((term) => term.startsWith("needle")) &&
+      /\b(?:blood collection|collection)\s+needles?\s+(?:and\s+)?(?:kits?|sets?)\b|\biv\s+(?:sets?|tubing)\b|\bneedles?\s+and\s+kits?\b/.test(categories);
+    const needleProductCategory = pair.primary.some((term) => term.startsWith("needle")) &&
+      /\b(?:pen needle|standard needles?|blunt fill needle|safety hypodermic needles?)\b/.test(categories);
+    const needleFreeRecord = /\b(?:without|w\/o|no|sans)\s+(?:the\s+)?needles?\b/.test(`${title} ${parent}`) ||
+      /\bneedle[- ]?free\b/.test(`${title} ${parent}`);
+    const actualNeedleProduct = pair.primary.some((term) => term.startsWith("needle")) &&
+      !needleFreeRecord && (hasTerm(title, "needle") || hasTerm(parent, "needle"));
+    const safetyNeedleProduct = pair.primary.some((term) => term.startsWith("needle")) &&
+      /\bsafety\s+(?:hypodermic\s+)?needles?\b/.test(`${title} ${parent}`) &&
+      !/\bsafety\s+syringe/.test(`${title} ${parent}`);
+    const actualPrimaryProduct = pair.primary.some((term) => hasTerm(title, term) || hasTerm(parent, term));
     if (hasPrimary) score += 520;
+    if (hasExactPrimaryCategory) score += 900;
+    if (actualPrimaryProduct) score += 900;
+    if (needleProductCategory) score += 1800;
+    if (actualNeedleProduct) score += 2200;
+    if (safetyNeedleProduct) score += 4500;
+    if (pair.primary.some((term) => term.startsWith("needle")) && needleFreeRecord && !requestedNeedleFree) score -= 9000;
+    // Broad catalog categories frequently contain "Needles" even when the
+    // record is a sharps container, blood-collection set, holder, or vascular
+    // access product. Keep those records searchable, but keep real needle
+    // products together throughout deeper pages for a plain "needle" query.
+    if (hasPrimary && !actualPrimaryProduct && !hasRelatedInTitle) {
+      score -= pair.primary.some((term) => term.startsWith("needle")) ? 3600 : 2200;
+    }
+    if (needleCollectionCategory && !hasExplicitPositiveRelationship) score -= 1800;
     if (relatedRequested) {
       if (hasPrimary && !hasRelated) score -= 900;
       if (/(?:without|w o|sans)\s+(?:needle|needles|aiguille|aiguilles)/.test(title)) score -= 4000;
@@ -335,6 +382,15 @@ function fieldScore(hit: SearchHit, originalQuery: string, searchQuery: string, 
     }
     if (!hasExplicitPositiveRelationship && !hasPrimaryInTitle && hasRelatedInTitle) score -= 4200;
     if (primaryRequested && pair.primary.some((term) => term.startsWith("needle")) && /\bneedle[- ]?free\b/.test(title)) score -= 6000;
+    if (!hasExplicitPositiveRelationship && hasCombinationCategory) score -= 2800;
+    const syringePrimary = pair.primary.some((term) => term.startsWith("syringe"));
+    if (syringePrimary && requestedNeedleFree) {
+      if (needleFreeRecord) score += 9000;
+      else if (hasRelatedInTitle) score -= 9000;
+    }
+    const explicitSyringeSpecialty = specialtySyringeSignals.some((term) => phraseIn(original, term));
+    const hasSyringeSpecialty = specialtySyringeSignals.some((term) => phraseIn(title, term) || phraseIn(parent, term));
+    if (syringePrimary && !explicitSyringeSpecialty && hasSyringeSpecialty) score -= 2400;
   }
 
   const requestedPrimary = rolePairs.some((pair) => pair.primary.some((term) => original.includes(normalizeSearchText(term)))) || firstAidKitIntent || manikinIntent;

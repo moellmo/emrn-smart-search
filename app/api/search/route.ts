@@ -3,7 +3,8 @@ import { typesenseAdmin, typesenseSearch } from "../../../lib/typesense";
 import { buildSmartSearchQuery } from "../../../lib/smart-search-translator";
 import { buildNaturalLanguageSearchPlan } from "../../../lib/natural-language-search";
 import { normalizeSearchText } from "../../../lib/search-language";
-import { applyBrandQueryRanking, applyHiddenSkuFilter, applyIntentRanking, applyPinnedSkuListRanking, applyPrivateCategoryFilter, explainResult } from "../../../lib/search-ranking";
+import { applyBrandQueryRanking, applyHiddenSkuFilter, applyPinnedSkuListRanking, applyPrivateCategoryFilter, explainResult } from "../../../lib/search-ranking";
+import { applySearchRankingV2, searchIntentTier } from "../../../lib/search-ranking-v2";
 import { balanceHitsByProductFamily } from "../../../lib/search-result-balancing";
 import { getEffectiveSearchOverrides, getPinnedSkusForContext } from "../../../lib/search-overrides";
 import { PRODUCT_COLLECTION_ALIAS } from "../../../lib/search-index";
@@ -714,7 +715,17 @@ export async function GET(req: NextRequest) {
   const customerId = searchParams.get("customer_id") || "";
   const requestedPerPage = Math.min(Math.max(perPage, 1), 48);
   const pageEnd = page * requestedPerPage;
-  const primaryFetchSize = Math.min(Math.max(pageEnd * 4, requestedPerPage * 8), 250);
+  const normalizedQuery = normalizeSearchText(q);
+  const rankingQuery = normalizedQuery
+    .replace(/\b(?:grand|grands|grande|grandes)\b/g, "large")
+    .replace(/\b(?:petit|petite|petits|petites)\b/g, "small")
+    .replace(/\b(?:moyen|moyenne|moyens|moyennes)\b/g, "medium");
+  const broadProductFamilyQuery = /\b(?:needle|needles|syringe|syringes|glove|gloves|mask|masks|gauze|dressing|dressings|manikin|manikins|mannequin|mannequins)\b/.test(normalizedQuery) &&
+    !/\b(?:x[- ]?small|small|medium|large|x[- ]?large|latex|nitrile|vinyl|neoprene|\d+(?:\.\d+)?\s*(?:ml|cc|g|ga|gauge|mm)|\d+\s*x\s*\d+)\b/.test(normalizedQuery);
+  const primaryFetchSize = Math.min(
+    Math.max(pageEnd * 4, requestedPerPage * 8, broadProductFamilyQuery && page === 1 ? 250 : 0),
+    250
+  );
   const supplementalFetchSize = Math.min(Math.max(pageEnd * 2, requestedPerPage * 4), 160);
   const facetLimit = page === 1 ? 600 : 160;
 
@@ -851,10 +862,19 @@ export async function GET(req: NextRequest) {
 
     if ((!category && !categoryIds.length) || naturalLanguagePlan.active) {
       const directRecallQueries = supplementalRecallQueries(q, smartQuery.search_query);
+      const frenchSizeRecallQuery = smartQuery.language === "fr" &&
+        /\b(?:grand|grands|grande|grandes|petit|petite|petits|petites|moyen|moyenne|moyens|moyennes)\b/.test(normalizedQuery)
+        ? normalizedQuery
+            .replace(/\bgants?\b/g, "gloves")
+            .replace(/\bgrands?\b|\bgrandes?\b/g, "large")
+            .replace(/\bpetits?\b|\bpetites?\b/g, "small")
+            .replace(/\bmoyens?\b|\bmoyennes?\b/g, "medium")
+        : "";
       const hasStrongPrimaryPool = Number(results.found || 0) >= Math.max(requestedPerPage * 4, 100);
       const recallQueries = Array.from(
         new Set([
           ...(naturalLanguagePlan.recall_queries || []),
+          ...(frenchSizeRecallQuery ? [frenchSizeRecallQuery] : []),
           ...(hasStrongPrimaryPool && !naturalLanguagePlan.active ? [] : directRecallQueries),
         ])
       ).slice(0, 6);
@@ -927,10 +947,11 @@ export async function GET(req: NextRequest) {
     const rankedHits = applyBrandQueryRanking(
       applyNaturalLanguageBalancedRanking(
         applyNaturalLanguageAvoidTermRanking(
-          applyIntentRanking(
+          applySearchRankingV2(
             applyPrivateCategoryFilter(applyHiddenSkuFilter(mergeHits(supplementalHits, results.hits), controls), customerId, controls),
-            q,
-            smartQuery.search_query
+            rankingQuery,
+            smartQuery.search_query,
+            smartQuery.canonical_query || smartQuery.expansions.join(" ")
           ),
           naturalLanguagePlan.avoid_terms
         ),
@@ -938,12 +959,13 @@ export async function GET(req: NextRequest) {
       ),
       q
     );
+    const postProcessedHits = prioritizeFocusedProductFamilies(
+      prioritizePatientMonitorUnits(applyClientSort(rankedHits, sort), q, smartQuery.search_query),
+      q,
+      smartQuery.search_query
+    );
     const filteredHits = applyPinnedSkuListRanking(
-      prioritizeFocusedProductFamilies(
-        prioritizePatientMonitorUnits(applyClientSort(rankedHits, sort), q, smartQuery.search_query),
-        q,
-        smartQuery.search_query
-      ),
+      applySearchRankingV2(postProcessedHits, rankingQuery, smartQuery.search_query, smartQuery.canonical_query || smartQuery.expansions.join(" ")),
       pinnedSkus
     );
 

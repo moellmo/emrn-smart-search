@@ -94,7 +94,7 @@ export default function SmartSearchLabPage() {
     if (nextBrand) params.set("brand", nextBrand);
     if (nextCategory) params.set("category", nextCategory);
 
-    const res = await fetch(`/api/search?${params.toString()}`);
+    const res = await fetch(`/api/search?${params.toString()}`, { cache: "no-store" });
     const json: SearchResponse = await res.json();
 
     setData(json);
@@ -226,8 +226,8 @@ export default function SmartSearchLabPage() {
             )}
 
             <div style={{ display: "grid", gridTemplateColumns: "repeat(4,minmax(0,1fr))", gap: 14 }}>
-              {products.map((product) => (
-                <article key={product.id} style={{ background: "#fff", border: "1px solid #efd6d6", borderRadius: 18, overflow: "hidden" }}>
+              {products.map((product, index) => (
+                <article key={`${product.id}-${product.variant_id || product.sku || "item"}-${index}`} style={{ background: "#fff", border: "1px solid #efd6d6", borderRadius: 18, overflow: "hidden" }}>
                   <a href={product.url || "#"} target="_blank" style={{ height: 160, display: "flex", alignItems: "center", justifyContent: "center", padding: 14, borderBottom: "1px solid #f1eeee" }}>
                     {product.image ? <img src={product.image} alt="" style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} /> : "No image"}
                   </a>
