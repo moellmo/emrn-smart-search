@@ -863,6 +863,10 @@ export async function GET(req: NextRequest) {
 
     if ((!category && !categoryIds.length) || naturalLanguagePlan.active) {
       const directRecallQueries = supplementalRecallQueries(q, smartQuery.search_query);
+      const exactSyringeRecall = /\b(?:syringes?)\b/.test(normalizedQuery) &&
+        /\b(\d+(?:\.\d+)?)\s*(?:ml|cc)\b/.test(normalizedQuery)
+        ? [`${normalizedQuery.match(/\b\d+(?:\.\d+)?\s*(?:ml|cc)\b/)?.[0] || ""} syringe`, "luer lock syringe"]
+        : [];
       const frenchSizeRecallQuery = smartQuery.language === "fr" &&
         /\b(?:grand|grands|grande|grandes|petit|petite|petits|petites|moyen|moyenne|moyens|moyennes)\b/.test(normalizedQuery)
         ? normalizedQuery
@@ -876,6 +880,7 @@ export async function GET(req: NextRequest) {
         new Set([
           ...(naturalLanguagePlan.recall_queries || []),
           ...(frenchSizeRecallQuery ? [frenchSizeRecallQuery] : []),
+          ...exactSyringeRecall,
           ...(hasStrongPrimaryPool && !naturalLanguagePlan.active ? [] : directRecallQueries),
         ])
       ).slice(0, 6);

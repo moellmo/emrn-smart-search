@@ -4,6 +4,7 @@ import { buildSmartSearchQuery } from "../../../lib/smart-search-translator";
 import { buildNaturalLanguageSearchPlan, type NaturalLanguageSearchPlan } from "../../../lib/natural-language-search";
 import { normalizeSearchText } from "../../../lib/search-language";
 import { applyBrandQueryRanking, applyHiddenSkuFilter, applyIntentRanking, applyPinnedSkuRanking, applyPrivateCategoryFilter } from "../../../lib/search-ranking";
+import { applySearchRankingV2 } from "../../../lib/search-ranking-v2";
 import { balanceHitsByProductFamily, productFamilyKey } from "../../../lib/search-result-balancing";
 import { getEffectiveSearchOverrides, getPinnedSkusForQuery } from "../../../lib/search-overrides";
 import { PRODUCT_COLLECTION_ALIAS } from "../../../lib/search-index";
@@ -447,6 +448,18 @@ function applyAutocompleteFocusedFamilyRanking(hits: any[] = [], query: string) 
       force: 900,
     },
     {
+      active: includesAny(normalized, ["stiff neck", "stifneck", "cervical collar", "neck collar", "collars"]),
+      prefer: ["stifneck", "cervical collar", "neck collar", "collar"],
+      demote: ["hot pack", "heat", "relief pak", "compress", "pillow"],
+      force: 1600,
+    },
+    {
+      active: includesAny(normalized, ["first aid kit", "first aid kits", "trousse premiers soins", "trousse de premiers soins"]),
+      prefer: ["first aid kit", "first aid kits", "csa", "trousse de premiers soins"],
+      demote: ["collar", "stifneck", "hot pack", "gauze", "bandage"],
+      force: 1500,
+    },
+    {
       active: includesAny(normalized, ["oximeter", "oximeters", "oxymeter", "oxymeters", "pulse oximeter", "pulse ox", "spo2 monitor", "oximetre", "oximètre"]),
       prefer: ["pulse oximeter", "finger pulse oximeter", "fingertip pulse oximeter", "spo2 deluxe pulse oximeter", "co-oximeter", "oximeter"],
       demote: ["accessory", "accessories", "sensor", "probe", "cable"],
@@ -471,6 +484,11 @@ function applyAutocompleteFocusedFamilyRanking(hits: any[] = [], query: string) 
       const demote = family.demote.some((term) => name.includes(normalizeSearchText(term)) || looseName.includes(normalizeSearchText(term).replace(/[./-]/g, " ")));
       if (prefer && !demote) value += family.force;
       if (demote) value -= family.force;
+    }
+    if (includesAny(normalized, ["stiff neck", "stifneck", "cervical collar", "neck collar", "collars"])) {
+      if (name.includes("stifneck")) value += 1800;
+      else if (name.includes("cervical collar")) value += 1000;
+      else if (name.includes("neck collar")) value += 500;
     }
     return value;
   };
@@ -745,6 +763,11 @@ export async function GET(req: NextRequest) {
     : await buildNaturalLanguageSearchPlan(q, controls);
   const smartQuery = await buildSmartSearchQuery(q, { skipOpenAI: naturalLanguagePlan.active && naturalLanguagePlan.source === "manual" });
   const primaryQuery = compactAutocompleteQuery(q, naturalLanguagePlan, smartQuery.search_query);
+  const rankingQuery = normalizeSearchText(q)
+    .replace(/\b(?:grand|grands|grande|grandes)\b/g, "large")
+    .replace(/\b(?:petit|petite|petits|petites)\b/g, "small")
+    .replace(/\b(?:moyen|moyenne|moyens|moyennes)\b/g, "medium");
+  const canonicalSearchQuery = (smartQuery as { canonical_query?: string }).canonical_query || smartQuery.expansions.join(" ");
 
   const results: any = await typesenseSearch
     .collections(COLLECTION_NAME)
@@ -762,6 +785,7 @@ export async function GET(req: NextRequest) {
       prefix: true,
       highlight_full_fields: "name,sku,brand,sold_by,categories,variant_label,option_text",
     });
+  const hasStrongAutocompletePrimary = (results.hits || []).length >= 12;
 
   const supplementalSearches: Promise<any>[] = [];
   const pinnedSkus = getPinnedSkusForQuery(q, controls);
@@ -822,12 +846,14 @@ export async function GET(req: NextRequest) {
     );
   }
 
-  const categoryNames = Array.from(
-    new Set([
-      ...(naturalLanguagePlan.category_queries || []),
-      ...categoryFacetNamesForQuery(results, q, smartQuery.search_query),
-    ])
-  ).slice(0, naturalLanguagePlan.active ? 3 : 6);
+  const categoryNames = !hasStrongAutocompletePrimary || naturalLanguagePlan.active
+    ? Array.from(
+        new Set([
+          ...(naturalLanguagePlan.category_queries || []),
+          ...categoryFacetNamesForQuery(results, q, smartQuery.search_query),
+        ])
+      ).slice(0, naturalLanguagePlan.active ? 3 : 6)
+    : [];
 
   for (const categoryName of categoryNames) {
     supplementalSearches.push(
@@ -845,12 +871,39 @@ export async function GET(req: NextRequest) {
     );
   }
 
-  const recallQueries = Array.from(
-    new Set([
-      ...(naturalLanguagePlan.recall_queries || []),
-      ...autocompleteRecallQueries(q, smartQuery.search_query),
-    ])
-  ).slice(0, naturalLanguagePlan.active ? 3 : 6);
+  const recallQueries = !hasStrongAutocompletePrimary || naturalLanguagePlan.active
+    ? Array.from(
+        new Set([
+          ...(naturalLanguagePlan.recall_queries || []),
+          ...autocompleteRecallQueries(q, smartQuery.search_query),
+        ])
+      ).slice(0, naturalLanguagePlan.active ? 3 : 6)
+    : [];
+  const exactSyringeRecall = /\b(?:syringes?)\b/.test(normalizeSearchText(q)) &&
+    /\b\d+(?:\.\d+)?\s*(?:ml|cc)\b/.test(normalizeSearchText(q))
+    ? [`${normalizeSearchText(q).match(/\b\d+(?:\.\d+)?\s*(?:ml|cc)\b/)?.[0] || ""} syringe without needle`, `${normalizeSearchText(q).match(/\b\d+(?:\.\d+)?\s*(?:ml|cc)\b/)?.[0] || ""} syringe only`, "luer lock syringe"]
+    : [];
+  for (const exactQuery of exactSyringeRecall) {
+    if (!recallQueries.includes(exactQuery)) recallQueries.push(exactQuery);
+  }
+  const normalizedAutocompleteQuery = normalizeSearchText(q);
+  const frenchSizeRecall = smartQuery.language === "fr" &&
+    /\b(?:grand|grands|grande|grandes|petit|petite|petits|petites|moyen|moyenne|moyens|moyennes)\b/.test(normalizedAutocompleteQuery)
+    ? [normalizedAutocompleteQuery
+        .replace(/\bgants?\b/g, "gloves")
+        .replace(/\bgrands?\b|\bgrandes?\b/g, "large")
+        .replace(/\bpetits?\b|\bpetites?\b/g, "small")
+        .replace(/\bmoyens?\b|\bmoyennes?\b/g, "medium")]
+    : [];
+  for (const recallQuery of frenchSizeRecall) {
+    if (!recallQueries.includes(recallQuery)) recallQueries.push(recallQuery);
+  }
+  const collarRecall = includesAny(normalizedAutocompleteQuery, ["stiff neck", "stifneck", "cervical collar", "neck collar", "collars"])
+    ? ["Stifneck collar", "cervical collar", "neck collar"]
+    : [];
+  for (const recallQuery of collarRecall) {
+    if (!recallQueries.includes(recallQuery)) recallQueries.push(recallQuery);
+  }
 
   for (const recallQuery of recallQueries) {
     supplementalSearches.push(
@@ -903,12 +956,13 @@ export async function GET(req: NextRequest) {
 
   const rankedHits = applyBrandQueryRanking(
     applyAutocompleteIvGuard(
-      applyIntentRanking(
+      applySearchRankingV2(
         applyPrivateCategoryFilter(applyHiddenSkuFilter(mergeHits(supplementalHits, results.hits || []), controls), customerId, controls),
-        q,
-        smartQuery.search_query
+        rankingQuery,
+        smartQuery.search_query,
+        canonicalSearchQuery
       ),
-      q,
+      rankingQuery,
       smartQuery.search_query
     ),
     q

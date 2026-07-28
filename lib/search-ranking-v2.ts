@@ -59,7 +59,7 @@ const combinationProductSignals = [
 ];
 
 const specialtySyringeSignals = [
-  "bulb", "ear/ulcer", "insulin", "oral", "irrigation", "flush", "prefilled", "atomization",
+  "bulb", "ear/ulcer", "insulin", "oral", "irrigation", "flush", "prefilled", "atomization", "air/water", "air water", "water syringe", "tip syringe",
   "vial access", "dual cannula", "convenience", "training",
 ];
 
@@ -390,7 +390,7 @@ function fieldScore(hit: SearchHit, originalQuery: string, searchQuery: string, 
     }
     const explicitSyringeSpecialty = specialtySyringeSignals.some((term) => phraseIn(original, term));
     const hasSyringeSpecialty = specialtySyringeSignals.some((term) => phraseIn(title, term) || phraseIn(parent, term));
-    if (syringePrimary && !explicitSyringeSpecialty && hasSyringeSpecialty) score -= 2400;
+    if (syringePrimary && !explicitSyringeSpecialty && hasSyringeSpecialty) score -= 4200;
   }
 
   const requestedPrimary = rolePairs.some((pair) => pair.primary.some((term) => original.includes(normalizeSearchText(term)))) || firstAidKitIntent || manikinIntent;
