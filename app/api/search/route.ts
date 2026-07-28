@@ -720,15 +720,11 @@ export async function GET(req: NextRequest) {
     .replace(/\b(?:grand|grands|grande|grandes)\b/g, "large")
     .replace(/\b(?:petit|petite|petits|petites)\b/g, "small")
     .replace(/\b(?:moyen|moyenne|moyens|moyennes)\b/g, "medium");
-  const broadProductFamilyQuery = /\b(?:needle|needles|syringe|syringes|glove|gloves|mask|masks|gauze|dressing|dressings|manikin|manikins|mannequin|mannequins)\b/.test(normalizedQuery) &&
-    !/\b(?:x[- ]?small|small|medium|large|x[- ]?large|latex|nitrile|vinyl|neoprene|\d+(?:\.\d+)?\s*(?:ml|cc|g|ga|gauge|mm)|\d+\s*x\s*\d+)\b/.test(normalizedQuery);
-  const primaryFetchSize = Math.min(
-    Math.max(pageEnd * 4, requestedPerPage * 8, broadProductFamilyQuery ? 250 : 0),
-    250
-  );
-  const supplementalFetchSize = broadProductFamilyQuery
-    ? 160
-    : Math.min(Math.max(pageEnd * 2, requestedPerPage * 4), 160);
+  // Load-more must be a continuation of the same ranked result set. Use a
+  // fixed candidate pool for every query, including exact-size/material
+  // searches, so page 2 cannot introduce a new independently ranked family.
+  const primaryFetchSize = 250;
+  const supplementalFetchSize = 160;
   const facetLimit = page === 1 ? 600 : 160;
 
   const controls = await getEffectiveSearchOverrides();
@@ -869,6 +865,10 @@ export async function GET(req: NextRequest) {
         /\b(\d+(?:\.\d+)?)\s*(?:ml|cc)\b/.test(normalizedQuery)
         ? [`${normalizedQuery.match(/\b\d+(?:\.\d+)?\s*(?:ml|cc)\b/)?.[0] || ""} syringe`, "luer lock syringe"]
         : [];
+      const plainSyringeRecall = /\b(?:syringes?)\b/.test(normalizedQuery) &&
+        !/\b(?:with|attached|exchangeable|blunt\s+fill|without|needle[- ]?free|syringe\s+only|bulb|oral|insulin|irrigation|flush|prefilled|air\s*\/\s*water|ear\s*\/\s*ulcer)\b/.test(normalizedQuery)
+        ? ["syringe without needle", "syringe only"]
+        : [];
       const frenchSizeRecallQuery = smartQuery.language === "fr" &&
         /\b(?:grand|grands|grande|grandes|petit|petite|petits|petites|moyen|moyenne|moyens|moyennes)\b/.test(normalizedQuery)
         ? normalizedQuery
@@ -883,6 +883,7 @@ export async function GET(req: NextRequest) {
           ...(naturalLanguagePlan.recall_queries || []),
           ...(frenchSizeRecallQuery ? [frenchSizeRecallQuery] : []),
           ...exactSyringeRecall,
+          ...plainSyringeRecall,
           ...(hasStrongPrimaryPool && !naturalLanguagePlan.active ? [] : directRecallQueries),
         ])
       ).slice(0, 6);
