@@ -169,6 +169,42 @@ function originalNamePhraseScore(nameText: string, originalQuery: string) {
   return 0;
 }
 
+const exactTermStopWords = new Set([
+  "a", "an", "and", "are", "for", "from", "in", "is", "of", "on", "or", "the", "to", "with",
+  "at", "by", "can", "do", "find", "get", "have", "i", "me", "need", "please", "show", "want",
+  "without", "pour", "avec", "dans", "des", "les", "ou", "une", "un", "je", "cherche", "mon", "ma",
+]);
+
+function singularSearchTerm(value: string) {
+  if (value.endsWith("ies") && value.length > 4) return `${value.slice(0, -3)}y`;
+  if (value.endsWith("s") && value.length > 3) return value.slice(0, -1);
+  return value;
+}
+
+function hasExactTitleTerm(titleText: string, term: string) {
+  const variants = Array.from(new Set([term, singularSearchTerm(term)]));
+  return variants.some((variant) => hasAnyWholeWord(titleText, [variant]));
+}
+
+function exactRequestedTermScore(nameText: string, originalQuery: string) {
+  const normalized = normalizeSearchText(originalQuery);
+  if (!normalized || normalized === "*") return 0;
+
+  const terms = Array.from(new Set(normalized.split(" ").filter((term) =>
+    term.length >= 3 && /[a-z]/.test(term) && !exactTermStopWords.has(term)
+  )));
+  if (!terms.length || terms.length > 6) return 0;
+
+  const matchingTerms = terms.filter((term) => hasExactTitleTerm(nameText, term));
+  if (!matchingTerms.length) return 0;
+
+  // This is intentionally based on the customer's original words, not the
+  // expanded/translated query. Related products still remain eligible, but a
+  // product explicitly named for the requested term wins the tie-break.
+  if (matchingTerms.length === terms.length) return 1050 + matchingTerms.length * 80;
+  return matchingTerms.length * 620;
+}
+
 function focusedProductPhraseScore(hit: any, originalQuery: string, isAccessoryQuery: boolean) {
   const normalized = normalizeSearchText(originalQuery);
   if (!normalized || normalized === "*") return 0;
@@ -1243,6 +1279,7 @@ export function applyIntentRanking(hits: any[] = [], originalQuery: string, sear
     const categoryText = ` ${docCategories(hit).join(" ")} `;
     let intentScore = categoryPhraseScore(hit, originalQuery, searchQuery);
     intentScore += originalNamePhraseScore(nameText, originalQuery);
+    intentScore += exactRequestedTermScore(nameText, originalQuery);
     intentScore += focusedProductPhraseScore(hit, originalQuery, isAccessoryQuery);
     const textScore = Number(hit.text_match || hit._text_match || 0);
     const isFirstAidKitQuery = hasAny(query, ["first aid kit", "first aid kits", "trousse de premiers soins", "trousses de premiers soins", "trousse de premiers secours", "trousses de premiers secours", "trousse premiers soins", "trousses premiers soins", "trousse premiers secours", "trousses premiers secours"]);
