@@ -337,11 +337,15 @@ function supplementalRecallQueries(originalQuery: string, translatedQuery: strin
     }
   };
 
+  if (/\bfirst\s+aid\s+(?:kit|kits)\b/.test(original) || includesAny(query, ["csa first aid kit", "trousse de premiers soins", "trousse premiers soins"])) {
+    add("first aid kit", "first aid kits", "CSA first aid kit", "KIT/CSA-7-N", "first aid supplies");
+  }
+
   if (includesAny(query, ["qcpr", "q cpr", "little baby", "little family", "little junior", "little anne", "baby qcpr", "family qcpr", "junior qcpr"])) {
     add("little baby qcpr", "little family qcpr", "little junior qcpr", "little anne qcpr", "qcpr manikin");
   }
   if (includesAny(query, ["dummy", "dummies", "manikin", "manikins", "mannequin", "mannequins"])) {
-    add("cpr manikin", "training manikin", "patient simulator", "rescue dummy", "manikin");
+    add("cpr manikin", "QCPR manikin", "Crash Kelly", "Little Anne manikin", "training manikin", "patient simulator", "rescue dummy", "manikin");
   }
   if (isScissorsQuery) {
     add("scissor", "medical scissors", "bandage scissor", "bandage shears");
@@ -846,12 +850,14 @@ export async function GET(req: NextRequest) {
     }
 
     if ((!category && !categoryIds.length) || naturalLanguagePlan.active) {
+      const directRecallQueries = supplementalRecallQueries(q, smartQuery.search_query);
+      const hasStrongPrimaryPool = Number(results.found || 0) >= Math.max(requestedPerPage * 4, 100);
       const recallQueries = Array.from(
         new Set([
           ...(naturalLanguagePlan.recall_queries || []),
-          ...supplementalRecallQueries(q, smartQuery.search_query),
+          ...(hasStrongPrimaryPool && !naturalLanguagePlan.active ? [] : directRecallQueries),
         ])
-      ).slice(0, 12);
+      ).slice(0, 6);
 
       for (const recallQuery of recallQueries) {
         supplementalSearches.push({

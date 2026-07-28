@@ -141,11 +141,23 @@ function escapeRegExp(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+function singularizeOverrideWord(value: string) {
+  if (value.endsWith("ies") && value.length > 4) return `${value.slice(0, -3)}y`;
+  if (value.endsWith("s") && !value.endsWith("ss") && value.length > 3) return value.slice(0, -1);
+  return value;
+}
+
+function singularizeOverridePhrase(value: string) {
+  return value.split(/\s+/).map(singularizeOverrideWord).join(" ");
+}
+
 function matchesOverrideTerm(normalizedQuery: string, normalizedTerm: string) {
   if (!normalizedQuery || !normalizedTerm) return false;
-  if (normalizedQuery === normalizedTerm) return true;
-  const pattern = new RegExp(`(^|\\s)${escapeRegExp(normalizedTerm)}(?=\\s|$)`);
-  return pattern.test(normalizedQuery);
+  const singularQuery = singularizeOverridePhrase(normalizedQuery);
+  const singularTerm = singularizeOverridePhrase(normalizedTerm);
+  if (singularQuery === singularTerm) return true;
+  const pattern = new RegExp(`(^|\\s)${escapeRegExp(singularTerm)}(?=\\s|$)`);
+  return pattern.test(singularQuery);
 }
 
 function cleanStringList(values: unknown) {
