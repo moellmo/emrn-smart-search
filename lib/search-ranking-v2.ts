@@ -60,7 +60,12 @@ const combinationProductSignals = [
 
 const specialtySyringeSignals = [
   "bulb", "ear/ulcer", "insulin", "oral", "irrigation", "flush", "prefilled", "atomization", "air/water", "air water", "water syringe", "tip syringe",
-  "vial access", "dual cannula", "convenience", "training",
+  "vial access", "dual cannula", "convenience", "training", "vascular access", "sodium citrate", "saline", "ethanol",
+];
+
+const standardSyringeSignals = [
+  "luer lock syringe", "luer slip syringe", "syringe only", "without needle", "needle free",
+  "hypodermic syringe", "disposable syringe", "standard syringe",
 ];
 
 const mainEquipmentTerms = [
@@ -210,8 +215,12 @@ function fieldScore(hit: SearchHit, originalQuery: string, searchQuery: string, 
       .replace(/-/g, "");
     for (const attribute of requestedAttributes) {
       const requestedSize = /^(x?small|medium|large|x?large)$/.test(attribute);
+      const requestedVolume = /^(\d+(?:\.\d+)?)(?:ml|cc)$/.exec(attribute);
+      const volumeValue = requestedVolume ? Number(requestedVolume[1]) : NaN;
       const matches = requestedSize
         ? new RegExp(`(^|\\s|:|/|\\()${attribute.replace("x", "x[- ]?")}($|\\s|/|\\)|,)`, "i").test(attributeTextWithSpaces)
+        : requestedVolume
+          ? Array.from(attributeTextWithSpaces.matchAll(/(\d+(?:\.\d+)?)\s*(?:ml|cc)/gi)).some((match) => Number(match[1]) === volumeValue)
         : attributeText.includes(attribute);
       if (matches) score += 1450;
       else score -= 1250;
@@ -238,13 +247,16 @@ function fieldScore(hit: SearchHit, originalQuery: string, searchQuery: string, 
     }
   }
 
-  const requestedMl = requestedAttributes.find((term) => /^\d+(?:\.\d+)?ml$/.test(term));
-  if (requestedMl) {
-    const requestedValue = Number(requestedMl.replace("ml", ""));
-    const syringeSizes = Array.from(attributeTextWithSpaces.matchAll(/(\d+(?:\.\d+)?)\s*ml\s+syringe/gi))
+  const requestedVolume = requestedAttributes.find((term) => /^\d+(?:\.\d+)?(?:ml|cc)$/.test(term));
+  if (requestedVolume) {
+    const requestedValue = Number(requestedVolume.replace(/(?:ml|cc)$/, ""));
+    const syringeSizes = Array.from(attributeTextWithSpaces.matchAll(/(\d+(?:\.\d+)?)\s*(?:ml|cc)/gi))
       .map((match) => Number(match[1]))
       .filter((value) => Number.isFinite(value));
-    if (syringeSizes.some((value) => value !== requestedValue)) score -= 1800;
+    // ml and cc are equivalent for these catalog products. A different
+    // capacity is still a real contradiction and must stay below the exact
+    // requested size on every page, not only the first page.
+    if (syringeSizes.some((value) => value !== requestedValue)) score -= 12000;
   }
 
   const hasExplicitPositiveRelationship = /\b(?:with|avec)\b/.test(original);
@@ -390,7 +402,16 @@ function fieldScore(hit: SearchHit, originalQuery: string, searchQuery: string, 
     }
     const explicitSyringeSpecialty = specialtySyringeSignals.some((term) => phraseIn(original, term));
     const hasSyringeSpecialty = specialtySyringeSignals.some((term) => phraseIn(title, term) || phraseIn(parent, term));
-    if (syringePrimary && !explicitSyringeSpecialty && hasSyringeSpecialty) score -= 4200;
+    if (syringePrimary && !explicitSyringeSpecialty && !hasExplicitPositiveRelationship) {
+      const hasSyringeInProductFields = /\bsyring(?:e|es)\b/.test(`${title} ${parent}`);
+      const hasStandardSyringeSignal = standardSyringeSignals.some((term) => phraseIn(title, term) || phraseIn(parent, term));
+      // Keep ordinary syringes together across every loaded page. Category
+      // recall intentionally brings in broad candidates, so records that only
+      // mention syringes in search text must not interrupt the real family.
+      if (hasSyringeInProductFields && hasStandardSyringeSignal) score += 2400;
+      if (!hasSyringeInProductFields) score -= 7000;
+      if (hasSyringeSpecialty) score -= 8000;
+    }
   }
 
   const requestedPrimary = rolePairs.some((pair) => pair.primary.some((term) => original.includes(normalizeSearchText(term)))) || firstAidKitIntent || manikinIntent;

@@ -723,10 +723,12 @@ export async function GET(req: NextRequest) {
   const broadProductFamilyQuery = /\b(?:needle|needles|syringe|syringes|glove|gloves|mask|masks|gauze|dressing|dressings|manikin|manikins|mannequin|mannequins)\b/.test(normalizedQuery) &&
     !/\b(?:x[- ]?small|small|medium|large|x[- ]?large|latex|nitrile|vinyl|neoprene|\d+(?:\.\d+)?\s*(?:ml|cc|g|ga|gauge|mm)|\d+\s*x\s*\d+)\b/.test(normalizedQuery);
   const primaryFetchSize = Math.min(
-    Math.max(pageEnd * 4, requestedPerPage * 8, broadProductFamilyQuery && page === 1 ? 250 : 0),
+    Math.max(pageEnd * 4, requestedPerPage * 8, broadProductFamilyQuery ? 250 : 0),
     250
   );
-  const supplementalFetchSize = Math.min(Math.max(pageEnd * 2, requestedPerPage * 4), 160);
+  const supplementalFetchSize = broadProductFamilyQuery
+    ? 160
+    : Math.min(Math.max(pageEnd * 2, requestedPerPage * 4), 160);
   const facetLimit = page === 1 ? 600 : 160;
 
   const controls = await getEffectiveSearchOverrides();

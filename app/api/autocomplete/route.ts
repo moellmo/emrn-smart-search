@@ -490,6 +490,17 @@ function applyAutocompleteFocusedFamilyRanking(hits: any[] = [], query: string) 
       else if (name.includes("cervical collar")) value += 1000;
       else if (name.includes("neck collar")) value += 500;
     }
+    const syringeQuery = includesAny(normalized, ["syringe", "syringes", "seringue", "seringues"]);
+    const explicitSyringeSpecialty = includesAny(normalized, ["bulb", "oral", "insulin", "irrigation", "flush", "prefilled", "air/water", "air water", "ear/ulcer"]);
+    const explicitSyringeRelationship = includesAny(normalized, ["with needle", "with needles", "attached needle", "exchangeable needle", "blunt fill"]);
+    const needleFreeSyringeQuery = includesAny(normalized, ["without needle", "without needles", "needle-free", "needle free", "syringe only"]);
+    if (syringeQuery && !explicitSyringeSpecialty && !explicitSyringeRelationship) {
+      if (needleFreeSyringeQuery && /without\s+needles?|needle[- ]?free|syringe only/.test(name)) value += 4200;
+      if (/(?:luer lock|luer slip|hypodermic|disposable|standard)\s+syringe|syringe\s+only|without\s+needle|needle[- ]?free/.test(name)) value += 1800;
+      if (/(?:with|attached|exchangeable|blunt fill)\s+needles?|cannula|w\/ndl/.test(name)) value -= 4800;
+      if (!/\bsyring(?:e|es)\b/.test(name)) value -= 5000;
+      if (/(?:oral|bulb|ear\/?ulcer|insulin|irrigation|flush|prefilled|vascular access|sodium citrate|saline|air\/?water)/.test(name)) value -= 6000;
+    }
     return value;
   };
 
@@ -887,6 +898,13 @@ export async function GET(req: NextRequest) {
     if (!recallQueries.includes(exactQuery)) recallQueries.push(exactQuery);
   }
   const normalizedAutocompleteQuery = normalizeSearchText(q);
+  const plainSyringeAutocomplete = includesAny(normalizedAutocompleteQuery, ["syringe", "syringes", "seringue", "seringues"]) &&
+    !includesAny(normalizedAutocompleteQuery, ["with needle", "with needles", "attached needle", "exchangeable needle", "blunt fill", "without needle", "without needles", "needle-free", "needle free", "syringe only", "bulb", "oral", "insulin", "irrigation", "flush", "prefilled"])
+    ? ["syringe without needle", "syringe only"]
+    : [];
+  for (const recallQuery of plainSyringeAutocomplete) {
+    if (!recallQueries.includes(recallQuery)) recallQueries.push(recallQuery);
+  }
   const frenchSizeRecall = smartQuery.language === "fr" &&
     /\b(?:grand|grands|grande|grandes|petit|petite|petits|petites|moyen|moyenne|moyens|moyennes)\b/.test(normalizedAutocompleteQuery)
     ? [normalizedAutocompleteQuery
