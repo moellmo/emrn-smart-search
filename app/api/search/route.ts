@@ -732,6 +732,7 @@ export async function GET(req: NextRequest) {
   const controls = await getEffectiveSearchOverrides();
   const naturalLanguagePlan = await buildNaturalLanguageSearchPlan(q, controls);
   const smartQuery = await buildSmartSearchQuery(q, { skipOpenAI: naturalLanguagePlan.active && naturalLanguagePlan.source === "manual" });
+  const canonicalSearchQuery = (smartQuery as { canonical_query?: string }).canonical_query || smartQuery.expansions.join(" ");
   const categoryRecallQueries = [
     q,
     ...(naturalLanguagePlan.category_queries || []),
@@ -951,7 +952,7 @@ export async function GET(req: NextRequest) {
             applyPrivateCategoryFilter(applyHiddenSkuFilter(mergeHits(supplementalHits, results.hits), controls), customerId, controls),
             rankingQuery,
             smartQuery.search_query,
-            smartQuery.canonical_query || smartQuery.expansions.join(" ")
+            canonicalSearchQuery
           ),
           naturalLanguagePlan.avoid_terms
         ),
@@ -965,7 +966,7 @@ export async function GET(req: NextRequest) {
       smartQuery.search_query
     );
     const filteredHits = applyPinnedSkuListRanking(
-      applySearchRankingV2(postProcessedHits, rankingQuery, smartQuery.search_query, smartQuery.canonical_query || smartQuery.expansions.join(" ")),
+      applySearchRankingV2(postProcessedHits, rankingQuery, smartQuery.search_query, canonicalSearchQuery),
       pinnedSkus
     );
 
