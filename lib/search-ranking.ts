@@ -40,6 +40,71 @@ export function applyPinnedSkuRanking(hits: any[] = [], originalQuery: string, c
   return applyPinnedSkuListRanking(hits, getPinnedSkusForQuery(originalQuery, controls));
 }
 
+// Small, fast attribute pass for the pre-V2 ranking pipeline. It intentionally
+// avoids broad candidate expansion and only corrects high-confidence intent
+// signals that customers expect to hold across product variants.
+export function applyFastAttributeRanking(hits: any[] = [], originalQuery: string) {
+  const original = normalizeSearchText(originalQuery)
+    .replace(/\b(?:grand|grands|grande|grandes)\b/g, "large")
+    .replace(/\b(?:petit|petite|petits|petites)\b/g, "small")
+    .replace(/\b(?:moyen|moyenne|moyens|moyennes)\b/g, "medium");
+  if (!original || original === "*" || !hits.length) return hits;
+
+  const requestedVolume = /\b(\d+(?:\.\d+)?)\s*(?:ml|cc)\b/.exec(original);
+  const requestedMaterials = ["latex", "nitrile", "vinyl", "neoprene"].filter((term) => original.includes(term));
+  const requestedSize = /\b(x[- ]?small|small|medium|large|x[- ]?large)\b/.exec(original)?.[1]?.replace(/[- ]/g, "");
+  const syringeQuery = /\bsyring(?:e|es)\b/.test(original);
+  const needleQuery = /\bneedles?\b/.test(original);
+  const explicitSyringeRelationship = /\b(?:with|attached|exchangeable|blunt\s+fill)\s+needles?\b/.test(original);
+  const explicitSyringeSpecialty = /\b(?:bulb|oral|insulin|irrigation|flush|prefilled|air\s*\/\s*water|ear\s*\/\s*ulcer)\b/.test(original);
+  const explicitAccessory = /\b(?:accessor(?:y|ies)|replacement|parts?)\b/.test(original);
+
+  const score = (hit: any) => {
+    const doc = hit.document || {};
+    const title = normalizeSearchText([doc.name, doc.variant_label, doc.option_text].filter(Boolean).join(" "));
+    const parent = normalizeSearchText(String(doc.parent_name || ""));
+    const categories = normalizeSearchText(Array.isArray(doc.categories) ? doc.categories.join(" ") : String(doc.categories || ""));
+    const fields = `${title} ${parent} ${categories}`;
+    let value = 0;
+
+    if (requestedVolume) {
+      const requested = Number(requestedVolume[1]);
+      const titleVolumes = Array.from(`${title} ${parent}`.matchAll(/\b(\d+(?:\.\d+)?)\s*(?:ml|cc)\b/g)).map((match) => Number(match[1]));
+      const allVolumes = Array.from(fields.matchAll(/\b(\d+(?:\.\d+)?)\s*(?:ml|cc)\b/g)).map((match) => Number(match[1]));
+      if (titleVolumes.some((volume) => volume === requested)) value += 10000;
+      else if (titleVolumes.some((volume) => volume !== requested)) value -= 10000;
+      else if (allVolumes.some((volume) => volume === requested)) value += 5000;
+      else if (allVolumes.some((volume) => volume !== requested)) value -= 5000;
+    }
+
+    if (requestedMaterials.length) {
+      if (requestedMaterials.some((material) => fields.includes(material))) value += 1800;
+      if (requestedMaterials.some((material) => !fields.includes(material)) && ["latex", "nitrile", "vinyl", "neoprene"].some((material) => fields.includes(material))) value -= 3200;
+    }
+
+    if (requestedSize) {
+      const listedSize = fields.match(/\b(?:x[- ]?small|small|medium|large|x[- ]?large)\b/);
+      if (listedSize?.[0].replace(/[- ]/g, "") === requestedSize) value += 1600;
+      else if (listedSize) value -= 1800;
+    }
+
+    if (syringeQuery && !explicitAccessory && !explicitSyringeSpecialty && !explicitSyringeRelationship) {
+      if (/\bsyring(?:e|es)\b/.test(title) || /\bsyring(?:e|es)\b/.test(parent)) value += 700;
+      if (/\b(?:with|attached|exchangeable|blunt\s+fill)\s+needles?\b|\bcannula\b/.test(title)) value -= 1800;
+      if (/\b(?:bulb|oral|insulin|irrigation|flush|prefilled|ear\s*\/\s*ulcer)\b/.test(title)) value -= 1000;
+    }
+
+    if (needleQuery && !syringeQuery && !explicitAccessory) {
+      if (/\bneedles?\b/.test(title) || /\bneedles?\b/.test(parent)) value += 1100;
+      if (/\bsyring(?:e|es)\b/.test(title) && !/\bneedles?\b/.test(title)) value -= 1800;
+    }
+
+    return value;
+  };
+
+  return [...hits].sort((a, b) => score(b) - score(a));
+}
+
 export function applyPinnedSkuListRanking(hits: any[] = [], pinnedSkus: string[] = []) {
   if (!pinnedSkus.length) return hits;
 

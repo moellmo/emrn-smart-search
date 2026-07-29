@@ -3,8 +3,7 @@ import { typesenseAdmin, typesenseSearch } from "../../../lib/typesense";
 import { buildSmartSearchQuery } from "../../../lib/smart-search-translator";
 import { buildNaturalLanguageSearchPlan } from "../../../lib/natural-language-search";
 import { normalizeSearchText } from "../../../lib/search-language";
-import { applyBrandQueryRanking, applyHiddenSkuFilter, applyPinnedSkuListRanking, applyPrivateCategoryFilter, explainResult } from "../../../lib/search-ranking";
-import { applySearchRankingV2, searchIntentTier } from "../../../lib/search-ranking-v2";
+import { applyBrandQueryRanking, applyFastAttributeRanking, applyHiddenSkuFilter, applyIntentRanking, applyPinnedSkuListRanking, applyPrivateCategoryFilter, explainResult } from "../../../lib/search-ranking";
 import { balanceHitsByProductFamily } from "../../../lib/search-result-balancing";
 import { getEffectiveSearchOverrides, getPinnedSkusForContext } from "../../../lib/search-overrides";
 import { PRODUCT_COLLECTION_ALIAS } from "../../../lib/search-index";
@@ -338,15 +337,11 @@ function supplementalRecallQueries(originalQuery: string, translatedQuery: strin
     }
   };
 
-  if (/\bfirst\s+aid\s+(?:kit|kits)\b/.test(original) || includesAny(query, ["csa first aid kit", "trousse de premiers soins", "trousse premiers soins"])) {
-    add("first aid kit", "first aid kits", "CSA first aid kit", "KIT/CSA-7-N", "first aid supplies");
-  }
-
   if (includesAny(query, ["qcpr", "q cpr", "little baby", "little family", "little junior", "little anne", "baby qcpr", "family qcpr", "junior qcpr"])) {
     add("little baby qcpr", "little family qcpr", "little junior qcpr", "little anne qcpr", "qcpr manikin");
   }
   if (includesAny(query, ["dummy", "dummies", "manikin", "manikins", "mannequin", "mannequins"])) {
-    add("cpr manikin", "QCPR manikin", "Crash Kelly", "Little Anne manikin", "training manikin", "patient simulator", "rescue dummy", "manikin");
+    add("cpr manikin", "training manikin", "patient simulator", "rescue dummy", "manikin");
   }
   if (isScissorsQuery) {
     add("scissor", "medical scissors", "bandage scissor", "bandage shears");
@@ -716,21 +711,13 @@ export async function GET(req: NextRequest) {
   const requestedPerPage = Math.min(Math.max(perPage, 1), 48);
   const pageEnd = page * requestedPerPage;
   const normalizedQuery = normalizeSearchText(q);
-  const rankingQuery = normalizedQuery
-    .replace(/\b(?:grand|grands|grande|grandes)\b/g, "large")
-    .replace(/\b(?:petit|petite|petits|petites)\b/g, "small")
-    .replace(/\b(?:moyen|moyenne|moyens|moyennes)\b/g, "medium");
-  // Load-more must be a continuation of the same ranked result set. Use a
-  // fixed candidate pool for every query, including exact-size/material
-  // searches, so page 2 cannot introduce a new independently ranked family.
-  const primaryFetchSize = 250;
-  const supplementalFetchSize = 160;
+  const primaryFetchSize = Math.min(Math.max(pageEnd * 4, requestedPerPage * 8), 250);
+  const supplementalFetchSize = Math.min(Math.max(pageEnd * 2, requestedPerPage * 4), 160);
   const facetLimit = page === 1 ? 600 : 160;
 
   const controls = await getEffectiveSearchOverrides();
   const naturalLanguagePlan = await buildNaturalLanguageSearchPlan(q, controls);
   const smartQuery = await buildSmartSearchQuery(q, { skipOpenAI: naturalLanguagePlan.active && naturalLanguagePlan.source === "manual" });
-  const canonicalSearchQuery = (smartQuery as { canonical_query?: string }).canonical_query || smartQuery.expansions.join(" ");
   const categoryRecallQueries = [
     q,
     ...(naturalLanguagePlan.category_queries || []),
@@ -860,33 +847,17 @@ export async function GET(req: NextRequest) {
     }
 
     if ((!category && !categoryIds.length) || naturalLanguagePlan.active) {
-      const directRecallQueries = supplementalRecallQueries(q, smartQuery.search_query);
       const exactSyringeRecall = /\b(?:syringes?)\b/.test(normalizedQuery) &&
-        /\b(\d+(?:\.\d+)?)\s*(?:ml|cc)\b/.test(normalizedQuery)
+        /\b\d+(?:\.\d+)?\s*(?:ml|cc)\b/.test(normalizedQuery)
         ? [`${normalizedQuery.match(/\b\d+(?:\.\d+)?\s*(?:ml|cc)\b/)?.[0] || ""} syringe`, "luer lock syringe"]
         : [];
-      const plainSyringeRecall = /\b(?:syringes?)\b/.test(normalizedQuery) &&
-        !/\b(?:with|attached|exchangeable|blunt\s+fill|without|needle[- ]?free|syringe\s+only|bulb|oral|insulin|irrigation|flush|prefilled|air\s*\/\s*water|ear\s*\/\s*ulcer)\b/.test(normalizedQuery)
-        ? ["syringe without needle", "syringe only"]
-        : [];
-      const frenchSizeRecallQuery = smartQuery.language === "fr" &&
-        /\b(?:grand|grands|grande|grandes|petit|petite|petits|petites|moyen|moyenne|moyens|moyennes)\b/.test(normalizedQuery)
-        ? normalizedQuery
-            .replace(/\bgants?\b/g, "gloves")
-            .replace(/\bgrands?\b|\bgrandes?\b/g, "large")
-            .replace(/\bpetits?\b|\bpetites?\b/g, "small")
-            .replace(/\bmoyens?\b|\bmoyennes?\b/g, "medium")
-        : "";
-      const hasStrongPrimaryPool = Number(results.found || 0) >= Math.max(requestedPerPage * 4, 100);
       const recallQueries = Array.from(
         new Set([
           ...(naturalLanguagePlan.recall_queries || []),
-          ...(frenchSizeRecallQuery ? [frenchSizeRecallQuery] : []),
           ...exactSyringeRecall,
-          ...plainSyringeRecall,
-          ...(hasStrongPrimaryPool && !naturalLanguagePlan.active ? [] : directRecallQueries),
+          ...supplementalRecallQueries(q, smartQuery.search_query),
         ])
-      ).slice(0, 6);
+      ).slice(0, 12);
 
       for (const recallQuery of recallQueries) {
         supplementalSearches.push({
@@ -956,11 +927,10 @@ export async function GET(req: NextRequest) {
     const rankedHits = applyBrandQueryRanking(
       applyNaturalLanguageBalancedRanking(
         applyNaturalLanguageAvoidTermRanking(
-          applySearchRankingV2(
+          applyIntentRanking(
             applyPrivateCategoryFilter(applyHiddenSkuFilter(mergeHits(supplementalHits, results.hits), controls), customerId, controls),
-            rankingQuery,
-            smartQuery.search_query,
-            canonicalSearchQuery
+            q,
+            smartQuery.search_query
           ),
           naturalLanguagePlan.avoid_terms
         ),
@@ -968,13 +938,15 @@ export async function GET(req: NextRequest) {
       ),
       q
     );
-    const postProcessedHits = prioritizeFocusedProductFamilies(
-      prioritizePatientMonitorUnits(applyClientSort(rankedHits, sort), q, smartQuery.search_query),
-      q,
-      smartQuery.search_query
-    );
     const filteredHits = applyPinnedSkuListRanking(
-      applySearchRankingV2(postProcessedHits, rankingQuery, smartQuery.search_query, canonicalSearchQuery),
+      applyFastAttributeRanking(
+        prioritizeFocusedProductFamilies(
+          prioritizePatientMonitorUnits(applyClientSort(rankedHits, sort), q, smartQuery.search_query),
+          q,
+          smartQuery.search_query
+        ),
+        q
+      ),
       pinnedSkus
     );
 
