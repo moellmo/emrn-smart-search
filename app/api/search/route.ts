@@ -779,21 +779,22 @@ export async function GET(req: NextRequest) {
     const supplementalBase = filters.join(" && ");
     const pinnedSkus = getPinnedSkusForContext({ query: q, brand, category, categoryId, categoryIds }, controls);
 
-    for (const sku of pinnedSkus.slice(0, pageEnd)) {
+    if (pinnedSkus.length) {
+      const pinnedSkuFilter = `sku:=[${pinnedSkus.map((sku) => JSON.stringify(String(sku))).join(",")}]`;
       supplementalSearches.push({
         kind: "pinned",
         search: typesenseSearch
           .collections(COLLECTION_NAME)
           .documents()
           .search({
-            q: sku,
-            query_by: "sku,all_skus",
-            query_by_weights: "30,24",
-            filter_by: supplementalBase,
+            q: "*",
+            query_by: "sku",
+            query_by_weights: "30",
+            filter_by: [supplementalBase, pinnedSkuFilter].filter(Boolean).join(" && "),
             facet_by: "brand,categories,category_ids,sold_by,color,price,availability",
             max_facet_values: facetLimit,
             sort_by: normalizeSort(sort),
-            per_page: 4,
+            per_page: Math.min(Math.max(pinnedSkus.length, 24), 250),
             limit_hits: SEARCH_HIT_LIMIT,
             page: 1,
             num_typos: 0,

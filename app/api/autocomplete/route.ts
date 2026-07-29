@@ -787,19 +787,20 @@ export async function GET(req: NextRequest) {
     );
   }
 
-  for (const sku of pinnedSkus.slice(0, 12)) {
+  if (pinnedSkus.length) {
+    const pinnedSkuFilter = `sku:=[${pinnedSkus.map((sku) => JSON.stringify(String(sku))).join(",")}]`;
     supplementalSearches.push(
       withAutocompleteTimeout(typesenseSearch
         .collections(COLLECTION_NAME)
         .documents()
         .search({
-          q: sku,
-          query_by: "sku,all_skus",
-          query_by_weights: "30,24",
-          filter_by: "is_visible:=true",
+          q: "*",
+          query_by: "sku",
+          query_by_weights: "30",
+          filter_by: `is_visible:=true && ${pinnedSkuFilter}`,
           facet_by: "brand,categories",
           max_facet_values: 16,
-          per_page: 4,
+          per_page: Math.min(Math.max(pinnedSkus.length, 12), 100),
           num_typos: 0,
           prefix: false,
         }))

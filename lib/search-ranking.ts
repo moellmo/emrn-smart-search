@@ -138,8 +138,10 @@ export function applyPinnedAwareFastAttributeRanking(hits: any[] = [], originalQ
   };
   const pinnedHits = hits.filter(isPinned);
   const otherHits = hits.filter((hit) => !isPinned(hit));
+  const hasSpecificAttribute = /\b(?:x[- ]?small|small|medium|large|x[- ]?large|\d+(?:\.\d+)?\s*(?:ml|cc)|latex|nitrile|vinyl|neoprene|2\s*x\s*2)\b/i.test(originalQuery);
+  const rankedPinnedHits = applyFastAttributeRanking(pinnedHits, originalQuery);
   return [
-    ...applyFastAttributeRanking(pinnedHits, originalQuery),
+    ...(hasSpecificAttribute ? rankedPinnedHits : applyPinnedSkuListRanking(rankedPinnedHits, pinnedSkus)),
     ...applyFastAttributeRanking(otherHits, originalQuery),
   ];
 }
