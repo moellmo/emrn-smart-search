@@ -3,7 +3,7 @@ import { typesenseAdmin, typesenseSearch } from "../../../lib/typesense";
 import { buildSmartSearchQuery } from "../../../lib/smart-search-translator";
 import { buildNaturalLanguageSearchPlan } from "../../../lib/natural-language-search";
 import { normalizeSearchText } from "../../../lib/search-language";
-import { applyBrandQueryRanking, applyFastAttributeRanking, applyHiddenSkuFilter, applyIntentRanking, applyPinnedSkuListRanking, applyPrivateCategoryFilter, explainResult } from "../../../lib/search-ranking";
+import { applyBrandQueryRanking, applyHiddenSkuFilter, applyIntentRanking, applyPinnedAwareFastAttributeRanking, applyPrivateCategoryFilter, explainResult } from "../../../lib/search-ranking";
 import { balanceHitsByProductFamily } from "../../../lib/search-result-balancing";
 import { getEffectiveSearchOverrides, getPinnedSkusForContext } from "../../../lib/search-overrides";
 import { PRODUCT_COLLECTION_ALIAS } from "../../../lib/search-index";
@@ -938,15 +938,13 @@ export async function GET(req: NextRequest) {
       ),
       q
     );
-    const filteredHits = applyPinnedSkuListRanking(
-      applyFastAttributeRanking(
-        prioritizeFocusedProductFamilies(
-          prioritizePatientMonitorUnits(applyClientSort(rankedHits, sort), q, smartQuery.search_query),
-          q,
-          smartQuery.search_query
-        ),
-        q
+    const filteredHits = applyPinnedAwareFastAttributeRanking(
+      prioritizeFocusedProductFamilies(
+        prioritizePatientMonitorUnits(applyClientSort(rankedHits, sort), q, smartQuery.search_query),
+        q,
+        smartQuery.search_query
       ),
+      q,
       pinnedSkus
     );
 

@@ -71,10 +71,17 @@ export function applyFastAttributeRanking(hits: any[] = [], originalQuery: strin
       const requested = Number(requestedVolume[1]);
       const titleVolumes = Array.from(`${title} ${parent}`.matchAll(/\b(\d+(?:\.\d+)?)\s*(?:ml|cc)\b/g)).map((match) => Number(match[1]));
       const allVolumes = Array.from(fields.matchAll(/\b(\d+(?:\.\d+)?)\s*(?:ml|cc)\b/g)).map((match) => Number(match[1]));
-      if (titleVolumes.some((volume) => volume === requested)) value += 10000;
-      else if (titleVolumes.some((volume) => volume !== requested)) value -= 10000;
-      else if (allVolumes.some((volume) => volume === requested)) value += 5000;
-      else if (allVolumes.some((volume) => volume !== requested)) value -= 5000;
+      const compactTitle = `${title} ${parent}`.replace(/\s+/g, "");
+      const compactFields = fields.replace(/\s+/g, "");
+      const exactCompactVolume = [`${requested}ml`, `${requested}cc`];
+      const hasExactTitleVolume = exactCompactVolume.some((token) => compactTitle.includes(token));
+      const hasOtherTitleVolume = titleVolumes.some((volume) => volume !== requested);
+      const hasExactFieldVolume = exactCompactVolume.some((token) => compactFields.includes(token));
+      const hasOtherFieldVolume = allVolumes.some((volume) => volume !== requested);
+      if (hasExactTitleVolume) value += 10000;
+      else if (hasOtherTitleVolume) value -= 10000;
+      else if (hasExactFieldVolume) value += 5000;
+      else if (hasOtherFieldVolume) value -= 5000;
     }
 
     if (requestedMaterials.length) {
@@ -103,6 +110,24 @@ export function applyFastAttributeRanking(hits: any[] = [], originalQuery: strin
   };
 
   return [...hits].sort((a, b) => score(b) - score(a));
+}
+
+export function applyPinnedAwareFastAttributeRanking(hits: any[] = [], originalQuery: string, pinnedSkus: string[] = []) {
+  if (!pinnedSkus.length) return applyFastAttributeRanking(hits, originalQuery);
+  const pinned = new Set(pinnedSkus.map((sku) => String(sku).toLowerCase()));
+  const isPinned = (hit: any) => {
+    const sku = String(hit.document?.sku || "").toLowerCase();
+    const allSkus = Array.isArray(hit.document?.all_skus)
+      ? hit.document.all_skus.map((value: unknown) => String(value).toLowerCase())
+      : [];
+    return pinned.has(sku) || allSkus.some((value: string) => pinned.has(value));
+  };
+  const pinnedHits = hits.filter(isPinned);
+  const otherHits = hits.filter((hit) => !isPinned(hit));
+  return [
+    ...applyFastAttributeRanking(pinnedHits, originalQuery),
+    ...applyFastAttributeRanking(otherHits, originalQuery),
+  ];
 }
 
 export function applyPinnedSkuListRanking(hits: any[] = [], pinnedSkus: string[] = []) {

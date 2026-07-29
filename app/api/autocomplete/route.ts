@@ -3,7 +3,7 @@ import { typesenseAdmin, typesenseSearch } from "../../../lib/typesense";
 import { buildSmartSearchQuery } from "../../../lib/smart-search-translator";
 import { buildNaturalLanguageSearchPlan, type NaturalLanguageSearchPlan } from "../../../lib/natural-language-search";
 import { normalizeSearchText } from "../../../lib/search-language";
-import { applyBrandQueryRanking, applyFastAttributeRanking, applyHiddenSkuFilter, applyIntentRanking, applyPinnedSkuRanking, applyPrivateCategoryFilter } from "../../../lib/search-ranking";
+import { applyBrandQueryRanking, applyFastAttributeRanking, applyHiddenSkuFilter, applyIntentRanking, applyPinnedAwareFastAttributeRanking, applyPinnedSkuRanking, applyPrivateCategoryFilter } from "../../../lib/search-ranking";
 import { balanceHitsByProductFamily, productFamilyKey } from "../../../lib/search-result-balancing";
 import { getEffectiveSearchOverrides, getPinnedSkusForQuery } from "../../../lib/search-overrides";
 import { PRODUCT_COLLECTION_ALIAS } from "../../../lib/search-index";
@@ -920,12 +920,13 @@ export async function GET(req: NextRequest) {
     q
   );
   const hits = applyPinnedSkuRanking(
-    applyFastAttributeRanking(
+    applyPinnedAwareFastAttributeRanking(
       applyAutocompleteFocusedFamilyRanking(
         applyAutocompleteOxygenMaskRanking(diversifyAutocompleteHits(rankedHits, naturalLanguagePlan), q),
         q
       ),
-      q
+      q,
+      pinnedSkus
     ),
     q,
     controls
