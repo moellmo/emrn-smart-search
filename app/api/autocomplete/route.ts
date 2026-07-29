@@ -850,10 +850,18 @@ export async function GET(req: NextRequest) {
     /\b\d+(?:\.\d+)?\s*(?:ml|cc)\b/.test(normalizedAutocompleteQuery)
     ? [`${normalizedAutocompleteQuery.match(/\b\d+(?:\.\d+)?\s*(?:ml|cc)\b/)?.[0] || ""} syringe`, "luer lock syringe"]
     : [];
+  const frenchAttributeRecall = /\b(?:gants?|grand|grands|grande|grandes|petit|petite|petits|petites|moyen|moyenne|moyens|moyennes)\b/.test(normalizedAutocompleteQuery)
+    ? [normalizedAutocompleteQuery
+        .replace(/\bgants?\b/g, "gloves")
+        .replace(/\bgrand(?:s|e|es)?\b/g, "large")
+        .replace(/\bpetit(?:s|e|es)?\b/g, "small")
+        .replace(/\bmoyen(?:s|ne|nes)?\b/g, "medium")]
+    : [];
   const recallQueries = Array.from(
     new Set([
       ...(naturalLanguagePlan.recall_queries || []),
       ...exactSyringeRecall,
+      ...frenchAttributeRecall,
       ...autocompleteRecallQueries(q, smartQuery.search_query),
     ])
   ).slice(0, naturalLanguagePlan.active ? 3 : 6);
@@ -919,17 +927,17 @@ export async function GET(req: NextRequest) {
     ),
     q
   );
-  const hits = applyPinnedSkuRanking(
-    applyPinnedAwareFastAttributeRanking(
+  const hits = applyPinnedAwareFastAttributeRanking(
+    applyPinnedSkuRanking(
       applyAutocompleteFocusedFamilyRanking(
         applyAutocompleteOxygenMaskRanking(diversifyAutocompleteHits(rankedHits, naturalLanguagePlan), q),
         q
       ),
       q,
-      pinnedSkus
+      controls
     ),
     q,
-    controls
+    pinnedSkus
   );
   const products = hits.slice(0, 12).map((hit: any) => normalizeHit(hit.document));
   const categoryUrls = categoryUrlMapFromHits(hits);

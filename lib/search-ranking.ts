@@ -45,9 +45,10 @@ export function applyPinnedSkuRanking(hits: any[] = [], originalQuery: string, c
 // signals that customers expect to hold across product variants.
 export function applyFastAttributeRanking(hits: any[] = [], originalQuery: string) {
   const original = normalizeSearchText(originalQuery)
-    .replace(/\b(?:grand|grands|grande|grandes)\b/g, "large")
-    .replace(/\b(?:petit|petite|petits|petites)\b/g, "small")
-    .replace(/\b(?:moyen|moyenne|moyens|moyennes)\b/g, "medium");
+    .replace(/\bgrand(?:s|e|es)?\b/g, "large")
+    .replace(/\bpetit(?:s|e|es)?\b/g, "small")
+    .replace(/\bmoyen(?:s|ne|nes)?\b/g, "medium")
+    .replace(/\bgants?\b/g, "gloves");
   if (!original || original === "*" || !hits.length) return hits;
 
   const requestedVolume = /\b(\d+(?:\.\d+)?)\s*(?:ml|cc)\b/.exec(original);
@@ -55,6 +56,7 @@ export function applyFastAttributeRanking(hits: any[] = [], originalQuery: strin
   const requestedSize = /\b(x[- ]?small|small|medium|large|x[- ]?large)\b/.exec(original)?.[1]?.replace(/[- ]/g, "");
   const syringeQuery = /\bsyring(?:e|es)\b/.test(original);
   const needleQuery = /\bneedles?\b/.test(original);
+  const gloveQuery = /\bgloves?\b/.test(original);
   const explicitSyringeRelationship = /\b(?:with|attached|exchangeable|blunt\s+fill)\s+needles?\b/.test(original);
   const explicitSyringeSpecialty = /\b(?:bulb|oral|insulin|irrigation|flush|prefilled|air\s*\/\s*water|ear\s*\/\s*ulcer)\b/.test(original);
   const explicitAccessory = /\b(?:accessor(?:y|ies)|replacement|parts?)\b/.test(original);
@@ -65,6 +67,7 @@ export function applyFastAttributeRanking(hits: any[] = [], originalQuery: strin
     const parent = normalizeSearchText(String(doc.parent_name || ""));
     const categories = normalizeSearchText(Array.isArray(doc.categories) ? doc.categories.join(" ") : String(doc.categories || ""));
     const fields = `${title} ${parent} ${categories}`;
+    const productText = `${title} ${parent}`;
     let value = 0;
 
     if (requestedVolume) {
@@ -85,14 +88,25 @@ export function applyFastAttributeRanking(hits: any[] = [], originalQuery: strin
     }
 
     if (requestedMaterials.length) {
-      if (requestedMaterials.some((material) => fields.includes(material))) value += 1800;
-      if (requestedMaterials.some((material) => !fields.includes(material)) && ["latex", "nitrile", "vinyl", "neoprene"].some((material) => fields.includes(material))) value -= 3200;
+      if (requestedMaterials.some((material) => productText.includes(material))) value += 1800;
+      if (!requestedMaterials.some((material) => productText.includes(material))) value -= 2400;
+      if (requestedMaterials.some((material) => !productText.includes(material)) && ["latex", "nitrile", "vinyl", "neoprene"].some((material) => productText.includes(material))) value -= 3200;
+      if (requestedMaterials.includes("latex") && /\blatex[- ]?free\b/.test(productText)) value -= 3200;
     }
 
     if (requestedSize) {
-      const listedSize = fields.match(/\b(?:x[- ]?small|small|medium|large|x[- ]?large)\b/);
-      if (listedSize?.[0].replace(/[- ]/g, "") === requestedSize) value += 1600;
-      else if (listedSize) value -= 1800;
+      const listedSize = fields.match(/\b(?:x[- ]?small|small|medium|large|x[- ]?large)\b/)?.[0] ||
+        fields.match(/\b(?:size|taille)\s*:?\s*(xs|s|m|l|xl)\b/)?.[1] ||
+        fields.match(/(?:^|[\s,])(?:xs|xl|m|l)(?=[\s,\-]|$)/)?.[0].trim();
+      const normalizedListedSize = listedSize?.replace(/[- ]/g, "").replace(/^xs$/, "xsmall").replace(/^s$/, "small").replace(/^m$/, "medium").replace(/^l$/, "large").replace(/^xl$/, "xlarge");
+      if (normalizedListedSize === requestedSize) value += 1600;
+      else if (normalizedListedSize) value -= 1800;
+      else value -= 600;
+    }
+
+    if (gloveQuery) {
+      if (/\bgloves?\b/.test(productText)) value += 800;
+      else value -= 1200;
     }
 
     if (syringeQuery && !explicitAccessory && !explicitSyringeSpecialty && !explicitSyringeRelationship) {
