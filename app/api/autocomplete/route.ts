@@ -858,11 +858,16 @@ export async function GET(req: NextRequest) {
         .replace(/\bpetit(?:s|e|es)?\b/g, "small")
         .replace(/\bmoyen(?:s|ne|nes)?\b/g, "medium")]
     : [];
+  const dimensionMatch = normalizedAutocompleteQuery.replace(/[×✕]/g, "x").match(/\b(\d+(?:\.\d+)?)\s*x\s*(\d+(?:\.\d+)?)\b/);
+  const exactDimensionRecall = dimensionMatch
+    ? Array.from(new Set([`${dimensionMatch[1]}x${dimensionMatch[2]}`, `${dimensionMatch[2]}x${dimensionMatch[1]}`]))
+    : [];
   const recallQueries = Array.from(
     new Set([
       ...(naturalLanguagePlan.recall_queries || []),
       ...exactSyringeRecall,
       ...frenchAttributeRecall,
+      ...exactDimensionRecall,
       ...autocompleteRecallQueries(q, smartQuery.search_query),
     ])
   ).slice(0, naturalLanguagePlan.active ? 3 : 6);

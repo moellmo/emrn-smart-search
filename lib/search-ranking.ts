@@ -40,23 +40,50 @@ export function applyPinnedSkuRanking(hits: any[] = [], originalQuery: string, c
   return applyPinnedSkuListRanking(hits, getPinnedSkusForQuery(originalQuery, controls));
 }
 
+function normalizeDimensionText(value: string) {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/[×✕]/g, "x")
+    .replace(/[″”"]/g, " ")
+    .replace(/[’']/g, " ")
+    .replace(/[^a-z0-9./x\s-]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function dimensionPairs(value: string) {
+  return Array.from(normalizeDimensionText(value).matchAll(/\b(\d+(?:\.\d+)?)\s*x\s*(\d+(?:\.\d+)?)\b/g))
+    .map((match) => [Number(match[1]), Number(match[2])] as const);
+}
+
+function sameDimensionPair(left: readonly [number, number], right: readonly [number, number]) {
+  return (left[0] === right[0] && left[1] === right[1]) ||
+    (left[0] === right[1] && left[1] === right[0]);
+}
+
 // Small, fast attribute pass for the pre-V2 ranking pipeline. It intentionally
 // avoids broad candidate expansion and only corrects high-confidence intent
 // signals that customers expect to hold across product variants.
 export function applyFastAttributeRanking(hits: any[] = [], originalQuery: string) {
-  const original = normalizeSearchText(originalQuery)
+  const original = normalizeSearchText(String(originalQuery || "").replace(/[×✕]/g, "x"))
     .replace(/\bgrand(?:s|e|es)?\b/g, "large")
     .replace(/\bpetit(?:s|e|es)?\b/g, "small")
     .replace(/\bmoyen(?:s|ne|nes)?\b/g, "medium")
-    .replace(/\bgants?\b/g, "gloves");
+    .replace(/\bgants?\b/g, "gloves")
+    .replace(/\bcompresses?\b/g, "gauze");
   if (!original || original === "*" || !hits.length) return hits;
 
   const requestedVolume = /\b(\d+(?:\.\d+)?)\s*(?:ml|cc)\b/.exec(original);
+  const requestedDimensions = dimensionPairs(originalQuery);
+  const requestedGauge = /\b(\d{1,2})\s*(?:g|ga|gauge)\b/.exec(original)?.[1];
+  const requestedFrenchSize = /\b(\d+(?:\.\d+)?)\s*(?:fr|french)\b/.exec(original)?.[1];
+  const requestedNamedSize = /\b(?:size|taille)\s*#?\s*(\d+(?:\.\d+)?)\b/.exec(original)?.[1];
   const requestedMaterials = ["latex", "nitrile", "vinyl", "neoprene"].filter((term) => original.includes(term));
   const requestedSize = /\b(x[- ]?small|small|medium|large|x[- ]?large)\b/.exec(original)?.[1]?.replace(/[- ]/g, "");
   const syringeQuery = /\bsyring(?:e|es)\b/.test(original);
   const needleQuery = /\bneedles?\b/.test(original);
   const gloveQuery = /\bgloves?\b/.test(original);
+  const gauzeQuery = /\b(?:gauze|sponges?)\b/.test(original);
   const explicitSyringeRelationship = /\b(?:with|attached|exchangeable|blunt\s+fill)\s+needles?\b/.test(original);
   const explicitSyringeSpecialty = /\b(?:bulb|oral|insulin|irrigation|flush|prefilled|air\s*\/\s*water|ear\s*\/\s*ulcer)\b/.test(original);
   const explicitAccessory = /\b(?:accessor(?:y|ies)|replacement|parts?)\b/.test(original);
@@ -68,7 +95,43 @@ export function applyFastAttributeRanking(hits: any[] = [], originalQuery: strin
     const categories = normalizeSearchText(Array.isArray(doc.categories) ? doc.categories.join(" ") : String(doc.categories || ""));
     const fields = `${title} ${parent} ${categories}`;
     const productText = `${title} ${parent}`;
+    const rawProductText = [doc.name, doc.parent_name, doc.variant_label, doc.option_text].filter(Boolean).join(" ").toLowerCase();
+    const titleDimensions = dimensionPairs(`${doc.name || ""} ${doc.parent_name || ""} ${doc.variant_label || ""} ${doc.option_text || ""}`);
+    const fieldDimensions = dimensionPairs(`${doc.name || ""} ${doc.parent_name || ""} ${doc.variant_label || ""} ${doc.option_text || ""} ${Array.isArray(doc.categories) ? doc.categories.join(" ") : doc.categories || ""}`);
     let value = 0;
+
+    if (requestedDimensions.length) {
+      const exactTitleDimension = requestedDimensions.some((requested) => titleDimensions.some((listed) => sameDimensionPair(requested, listed)));
+      const exactFieldDimension = requestedDimensions.some((requested) => fieldDimensions.some((listed) => sameDimensionPair(requested, listed)));
+      if (exactTitleDimension) value += 8000;
+      else if (titleDimensions.length) value -= 4000;
+      else if (exactFieldDimension) value += 4000;
+      else if (fieldDimensions.length) value -= 2000;
+    }
+
+    if (requestedGauge) {
+      const gaugePattern = new RegExp(`\\b${requestedGauge}\\s*(?:g|ga|gauge)\\b`);
+      const hasExactGauge = gaugePattern.test(productText);
+      const hasOtherGauge = /\b\d{1,2}\s*(?:g|ga|gauge)\b/.test(productText);
+      if (hasExactGauge) value += 5000;
+      else if (hasOtherGauge) value -= 4000;
+    }
+
+    if (requestedFrenchSize) {
+      const frenchSizePattern = new RegExp(`\\b${requestedFrenchSize}\\s*(?:fr|french)\\b`);
+      const hasExactFrenchSize = frenchSizePattern.test(productText);
+      const hasOtherFrenchSize = /\b\d+(?:\.\d+)?\s*(?:fr|french)\b/.test(productText);
+      if (hasExactFrenchSize) value += 6000;
+      else if (hasOtherFrenchSize) value -= 4500;
+    }
+
+    if (requestedNamedSize) {
+      const namedSizePattern = new RegExp(`\\b(?:size|taille)\\s*#?\\s*${requestedNamedSize}\\b|(?:^|\\s)#\\s*${requestedNamedSize}\\b`);
+      const hasExactNamedSize = namedSizePattern.test(rawProductText);
+      const hasOtherNamedSize = /\b(?:size|taille)\s*#?\s*\d+(?:\.\d+)?\b|(?:^|\s)#\s*\d+(?:\.\d+)?\b/.test(rawProductText);
+      if (hasExactNamedSize) value += 6000;
+      else if (hasOtherNamedSize) value -= 4500;
+    }
 
     if (requestedVolume) {
       const requested = Number(requestedVolume[1]);
@@ -109,6 +172,11 @@ export function applyFastAttributeRanking(hits: any[] = [], originalQuery: strin
       else value -= 1200;
     }
 
+    if (gauzeQuery) {
+      if (/\b(?:gauze|sponges?)\b/.test(productText)) value += 1800;
+      else value -= 1800;
+    }
+
     if (syringeQuery && !explicitAccessory && !explicitSyringeSpecialty && !explicitSyringeRelationship) {
       if (/\bsyring(?:e|es)\b/.test(title) || /\bsyring(?:e|es)\b/.test(parent)) value += 700;
       if (/\b(?:with|attached|exchangeable|blunt\s+fill)\s+needles?\b|\bcannula\b/.test(title)) value -= 1800;
@@ -138,7 +206,7 @@ export function applyPinnedAwareFastAttributeRanking(hits: any[] = [], originalQ
   };
   const pinnedHits = hits.filter(isPinned);
   const otherHits = hits.filter((hit) => !isPinned(hit));
-  const hasSpecificAttribute = /\b(?:x[- ]?small|small|medium|large|x[- ]?large|\d+(?:\.\d+)?\s*(?:ml|cc)|latex|nitrile|vinyl|neoprene|2\s*x\s*2)\b/i.test(originalQuery);
+  const hasSpecificAttribute = /\b(?:x[- ]?small|small|medium|large|x[- ]?large|\d+(?:\.\d+)?\s*(?:ml|cc|fr|french)|latex|nitrile|vinyl|neoprene|\d+(?:\.\d+)?\s*(?:x|×)\s*\d+(?:\.\d+)?|\d{1,2}\s*(?:g|ga|gauge)|(?:size|taille)\s*#?\s*\d+(?:\.\d+)?)\b/i.test(originalQuery);
   const rankedPinnedHits = applyFastAttributeRanking(pinnedHits, originalQuery);
   return [
     ...(hasSpecificAttribute ? rankedPinnedHits : applyPinnedSkuListRanking(rankedPinnedHits, pinnedSkus)),
