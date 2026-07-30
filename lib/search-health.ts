@@ -30,6 +30,8 @@ export type SearchHealthResult =
   | { ok: true; responseTimeMs: number }
   | { ok: false };
 
+const healthHeaders = { "Cache-Control": "no-store" };
+
 function hasValidHits(result: TypesenseHealthResponse): result is { hits: unknown[] } {
   return Boolean(result) && typeof result === "object" && Array.isArray((result as { hits?: unknown }).hits);
 }
@@ -69,4 +71,36 @@ export async function checkSearchHealth({
   } finally {
     timeout.clear();
   }
+}
+
+export function createSearchHealthHandlers(search: () => Promise<TypesenseHealthResponse>) {
+  const run = () => checkSearchHealth({ search });
+
+  return {
+    GET: async () => {
+      const health = await run();
+      if (!health.ok) {
+        return Response.json(
+          { ok: false, service: "emrn-smart-search" },
+          { status: 503, headers: healthHeaders }
+        );
+      }
+
+      return Response.json(
+        {
+          ok: true,
+          service: "emrn-smart-search",
+          responseTimeMs: health.responseTimeMs,
+        },
+        { status: 200, headers: healthHeaders }
+      );
+    },
+    HEAD: async () => {
+      const health = await run();
+      return new Response(null, {
+        status: health.ok ? 200 : 503,
+        headers: healthHeaders,
+      });
+    },
+  };
 }
