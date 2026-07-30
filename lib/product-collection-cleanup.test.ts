@@ -85,6 +85,18 @@ test("dry run identifies candidates without deleting", async () => {
   const { deleted, result, logs } = await run({}, { dryRun: true });
   assert.deepEqual(deleted, []);
   assert.deepEqual(result.candidates, dated.slice(3));
+  const summary = JSON.parse(logs.find((message) => message.includes("typesense_collection_cleanup_summary")) || "{}");
+  assert.deepEqual(summary, {
+    event: "typesense_collection_cleanup_summary",
+    cleanupEnabled: true,
+    dryRun: true,
+    currentAliasTarget: live,
+    protectedCollections: dated.slice(0, 3),
+    candidateCollections: dated.slice(3),
+    totalDatedCollections: 5,
+    protectedCount: 3,
+    candidateCount: 2,
+  });
   assert.ok(logs.some((message) => message.includes("would delete")));
 });
 

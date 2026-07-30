@@ -101,6 +101,17 @@ export async function cleanupOldProductCollections({
   result.protectedCollections = Array.from(protectedSet);
   result.candidates = datedCollections.filter((name) => !protectedSet.has(name));
 
+  log(JSON.stringify({
+    event: "typesense_collection_cleanup_summary",
+    cleanupEnabled,
+    dryRun,
+    currentAliasTarget: liveTarget,
+    protectedCollections: result.protectedCollections,
+    candidateCollections: result.candidates,
+    totalDatedCollections: datedCollections.length,
+    protectedCount: result.protectedCollections.length,
+    candidateCount: result.candidates.length,
+  }));
   log(`[Typesense cleanup] protected: ${result.protectedCollections.join(", ") || "none"}`);
   log(`[Typesense cleanup] candidates: ${result.candidates.join(", ") || "none"}`);
 
