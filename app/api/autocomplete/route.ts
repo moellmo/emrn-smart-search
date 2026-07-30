@@ -570,6 +570,72 @@ function isAedUnitQuery(query: string) {
   ].some((term) => normalized === normalizeSearchText(term) || normalized.includes(normalizeSearchText(term)));
 }
 
+function isAedPadAutocompleteQuery(query: string) {
+  const normalized = normalizeSearchText(query);
+  return /\b(aed|defibrillator|defib)\b/.test(normalized) && /\b(pad|pads|electrode|electrodes)\b/.test(normalized);
+}
+
+function isFirstAidKitAutocompleteQuery(query: string) {
+  const normalized = normalizeSearchText(query);
+  return [
+    "first aid kit",
+    "first aid kits",
+    "trousse de premiers soins",
+    "trousses de premiers soins",
+    "trousse de premiers secours",
+    "trousses de premiers secours",
+  ].some((term) => normalized.includes(normalizeSearchText(term)));
+}
+
+function isColdPackAutocompleteQuery(query: string) {
+  const normalized = normalizeSearchText(query);
+  return /\bcold packs?\b/.test(normalized) && !/\bhot\b/.test(normalized);
+}
+
+// Synonyms and category recall deliberately cast a wide net. Keep that recall,
+// but ensure a focused autocomplete query leads with the product the customer
+// actually named rather than a neighbouring item from the same category.
+function applyAutocompleteExactProductRanking(hits: any[] = [], query: string) {
+  const firstAidKitQuery = isFirstAidKitAutocompleteQuery(query);
+  const aedPadQuery = isAedPadAutocompleteQuery(query);
+  const coldPackQuery = isColdPackAutocompleteQuery(query);
+  if (!firstAidKitQuery && !aedPadQuery && !coldPackQuery) return hits;
+
+  const score = (hit: any) => {
+    const name = normalizeSearchText([
+      hit?.document?.name,
+      hit?.document?.parent_name,
+      hit?.document?.variant_label,
+      hit?.document?.option_text,
+    ].filter(Boolean).join(" "));
+    let value = 0;
+
+    if (firstAidKitQuery) {
+      const exactKit = includesAny(name, ["first aid kit", "first aid kits", "medical kit", "emergency kit", "trauma kit", "ifak"]);
+      value += exactKit ? 7000 : -7000;
+    }
+
+    if (aedPadQuery) {
+      const exactPad = includesAny(name, ["aed pad", "aed pads", "defibrillator pad", "defibrillator pads", "electrode", "electrodes"]);
+      const aedUnit = includesAny(name, ["defibrillator kit", "aed kit", "defibrillator with", "with slim carrying case", "with standard carrying case", "home defibrillator"]);
+      const otherAedAccessory = includesAny(name, ["battery", "cabinet", "wall mount", "bracket", "sign", "trainer", "training"]);
+      if (exactPad && !aedUnit) value += 7000;
+      else if (aedUnit || otherAedAccessory) value -= 7000;
+    }
+
+    if (coldPackQuery) {
+      const coldPack = includesAny(name, ["cold pack", "cold packs", "instant cold"]);
+      const hotPack = includesAny(name, ["hot pack", "hot packs", "instant hot"]);
+      if (coldPack && !hotPack) value += 7000;
+      else if (hotPack) value -= 7000;
+    }
+
+    return value;
+  };
+
+  return [...hits].sort((a, b) => score(b) - score(a));
+}
+
 function singularCategoryPhrase(value: string) {
   return value.endsWith("s") && value.length > 3 ? value.slice(0, -1) : value;
 }
@@ -787,6 +853,27 @@ export async function GET(req: NextRequest) {
     );
   }
 
+  if (isAedPadAutocompleteQuery(q)) {
+    supplementalSearches.push(
+      withAutocompleteTimeout(typesenseSearch
+        .collections(COLLECTION_NAME)
+        .documents()
+        .search({
+          q: "AED pads",
+          query_by: "name,parent_name,variant_label,option_text,categories,search_text",
+          query_by_weights: "28,24,12,12,8,5",
+          filter_by: "is_visible:=true",
+          facet_by: "brand,categories",
+          max_facet_values: 16,
+          per_page: 24,
+          num_typos: 1,
+          typo_tokens_threshold: 1,
+          prefix: true,
+          highlight_full_fields: "name,parent_name,variant_label,option_text",
+        }))
+    );
+  }
+
   if (pinnedSkus.length) {
     const pinnedSkuFilter = `sku:=[${pinnedSkus.map((sku) => JSON.stringify(String(sku))).join(",")}]`;
     supplementalSearches.push(
@@ -926,7 +1013,10 @@ export async function GET(req: NextRequest) {
       applyFastAttributeRanking(applyIntentRanking(
         applyPrivateCategoryFilter(applyHiddenSkuFilter(mergeHits(supplementalHits, results.hits || []), controls), customerId, controls),
         q,
-        smartQuery.search_query
+        // Search expansions are for recall only. Ranking autocomplete from the
+        // original words prevents a synonym such as "AED" from outweighing
+        // the customer's more specific word "pads".
+        q
       ), q),
       q,
       smartQuery.search_query
@@ -936,7 +1026,10 @@ export async function GET(req: NextRequest) {
   const hits = applyPinnedAwareFastAttributeRanking(
     applyPinnedSkuRanking(
       applyAutocompleteFocusedFamilyRanking(
-        applyAutocompleteOxygenMaskRanking(diversifyAutocompleteHits(rankedHits, naturalLanguagePlan), q),
+        applyAutocompleteExactProductRanking(
+          applyAutocompleteOxygenMaskRanking(diversifyAutocompleteHits(rankedHits, naturalLanguagePlan), q),
+          q
+        ),
         q
       ),
       q,
