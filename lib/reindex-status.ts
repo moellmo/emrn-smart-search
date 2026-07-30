@@ -16,6 +16,7 @@ export type ReindexStatus = {
   failed_count: number;
   min_records: number;
   alias_swapped: boolean;
+  cleanup_warnings: string[];
   error: string;
   ms: number;
 };
@@ -54,6 +55,7 @@ export async function saveReindexStatus(update: ReindexStatusUpdate) {
     failed_count: update.failed_count || 0,
     min_records: update.min_records || 0,
     alias_swapped: update.alias_swapped || false,
+    cleanup_warnings: update.cleanup_warnings || [],
     error: update.error || "",
     ms: update.ms || 0,
   };

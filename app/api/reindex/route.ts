@@ -7,6 +7,7 @@ import {
   versionedProductCollectionName,
 } from "../../../lib/search-index";
 import { saveReindexStatus } from "../../../lib/reindex-status";
+import { cleanupOldProductCollections, shouldRunProductCollectionCleanup } from "../../../lib/product-collection-cleanup";
 
 const IMPORT_BATCH_SIZE = 250;
 
@@ -192,6 +193,64 @@ async function runReindex() {
     collection_name: targetCollection,
   });
 
+  const confirmedAlias = await typesenseAdmin
+    .aliases(PRODUCT_COLLECTION_ALIAS)
+    .retrieve()
+    .catch(() => null);
+
+  if (confirmedAlias?.collection_name !== targetCollection) {
+    // If the write could not be confirmed, keep cleanup off and restore the
+    // prior live target when one existed. Search never intentionally moves to
+    // an unverified collection.
+    if (previousAlias?.collection_name) {
+      await typesenseAdmin.aliases().upsert(PRODUCT_COLLECTION_ALIAS, {
+        collection_name: previousAlias.collection_name,
+      }).catch(() => null);
+    }
+
+    const payload = await saveReindexStatus({
+      status: "failed",
+      started_at: startedAt,
+      finished_at: Date.now(),
+      live_alias: PRODUCT_COLLECTION_ALIAS,
+      previous_collection: previousAlias?.collection_name || "",
+      target_collection: targetCollection,
+      total_records: products.length,
+      indexed_records: Number(collection.num_documents || 0),
+      failed_count: 0,
+      min_records: MIN_REINDEX_RECORDS,
+      error: "Reindex aborted after alias swap: production alias could not be confirmed.",
+      ms: Date.now() - startedAt,
+    });
+
+    return NextResponse.json(payload, { status: 500 });
+  }
+
+  let cleanupWarnings: string[] = [];
+  const shouldCleanup = shouldRunProductCollectionCleanup({
+    reindexSucceeded: true,
+    aliasConfirmed: true,
+    cleanupEnabled: process.env.TYPESENSE_COLLECTION_CLEANUP_ENABLED === "true",
+    dryRun: process.env.TYPESENSE_COLLECTION_CLEANUP_DRY_RUN === "true",
+  });
+
+  if (shouldCleanup) {
+    try {
+      const cleanup = await cleanupOldProductCollections({
+        client: typesenseAdmin,
+        aliasName: PRODUCT_COLLECTION_ALIAS,
+        expectedAliasTarget: targetCollection,
+        cleanupEnabled: process.env.TYPESENSE_COLLECTION_CLEANUP_ENABLED === "true",
+        dryRun: process.env.TYPESENSE_COLLECTION_CLEANUP_DRY_RUN === "true",
+      });
+      cleanupWarnings = cleanup.warnings;
+    } catch {
+      const warning = "[Typesense cleanup] unexpected cleanup failure; completed reindex remains live.";
+      console.warn(warning);
+      cleanupWarnings = [warning];
+    }
+  }
+
   const payload = await saveReindexStatus({
     status: "success",
     started_at: startedAt,
@@ -204,6 +263,7 @@ async function runReindex() {
     failed_count: 0,
     min_records: MIN_REINDEX_RECORDS,
     alias_swapped: true,
+    cleanup_warnings: cleanupWarnings,
     ms: Date.now() - startedAt,
   });
 
