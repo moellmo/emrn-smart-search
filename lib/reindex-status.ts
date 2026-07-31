@@ -24,7 +24,7 @@ export type ReindexStatus = {
 export type ReindexStatusUpdate = Partial<ReindexStatus> &
   Pick<ReindexStatus, "status" | "started_at" | "live_alias" | "target_collection">;
 
-async function ensureStatusCollection() {
+export async function ensureReindexStatusCollection() {
   try {
     await typesenseAdmin.collections(STATUS_COLLECTION).retrieve();
   } catch {
@@ -40,7 +40,7 @@ async function ensureStatusCollection() {
 }
 
 export async function saveReindexStatus(update: ReindexStatusUpdate) {
-  await ensureStatusCollection();
+  await ensureReindexStatusCollection();
 
   const status: ReindexStatus = {
     ok: update.status === "success",
@@ -70,7 +70,7 @@ export async function saveReindexStatus(update: ReindexStatusUpdate) {
 }
 
 export async function getReindexStatus() {
-  await ensureStatusCollection();
+  await ensureReindexStatusCollection();
 
   try {
     const doc: any = await typesenseAdmin
