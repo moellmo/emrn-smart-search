@@ -1,4 +1,6 @@
 import { typesenseAdmin } from "./typesense";
+import { getReindexLockState, removeExpiredReindexLock } from "./reindex-lock";
+import { reconcileStaleReindexStatus } from "./reindex-status-state";
 
 const STATUS_COLLECTION = "emrn_search_controls";
 const STATUS_DOC_ID = "reindex_status";
@@ -19,6 +21,7 @@ export type ReindexStatus = {
   cleanup_warnings: string[];
   error: string;
   ms: number;
+  interrupted: boolean;
 };
 
 export type ReindexStatusUpdate = Partial<ReindexStatus> &
@@ -58,6 +61,7 @@ export async function saveReindexStatus(update: ReindexStatusUpdate) {
     cleanup_warnings: update.cleanup_warnings || [],
     error: update.error || "",
     ms: update.ms || 0,
+    interrupted: update.interrupted || false,
   };
 
   await typesenseAdmin.collections(STATUS_COLLECTION).documents().upsert({
@@ -78,7 +82,18 @@ export async function getReindexStatus() {
       .documents(STATUS_DOC_ID)
       .retrieve();
 
-    return JSON.parse(doc.config_json || "{}") as Partial<ReindexStatus>;
+    const status = JSON.parse(doc.config_json || "{}") as Partial<ReindexStatus>;
+    const lock = await getReindexLockState({ client: typesenseAdmin });
+    const reconciled = reconcileStaleReindexStatus({
+      status,
+      lock: { checked: true, active: lock.active },
+    });
+    if (!reconciled.interrupted || !reconciled.status) return status;
+
+    // Only stale locks are removed. A valid active lock is never cleared by a
+    // status read, and this never invokes a reindex.
+    if (lock.exists && !lock.active) await removeExpiredReindexLock({ client: typesenseAdmin });
+    return await saveReindexStatus(reconciled.status as ReindexStatusUpdate);
   } catch {
     return null;
   }

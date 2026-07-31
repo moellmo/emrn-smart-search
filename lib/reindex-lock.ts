@@ -8,10 +8,18 @@ export type ReindexLockClient = {
 };
 
 export type ReindexLock = { acquired: boolean; token?: string };
+export type ReindexLockState = {
+  exists: boolean;
+  token: string;
+  acquiredAt: number;
+  expiresAt: number;
+  active: boolean;
+};
 
 function lockPayload(token: string, now: number) {
   return {
     token,
+    acquiredAt: now,
     expiresAt: now + LOCK_TTL_MS,
   };
 }
@@ -21,10 +29,50 @@ function parseLock(document: LockDocument) {
     const payload = JSON.parse(String(document.config_json || "{}"));
     return {
       token: String(payload.token || ""),
+      acquiredAt: Number(payload.acquiredAt || 0),
       expiresAt: Number(payload.expiresAt || 0),
     };
   } catch {
-    return { token: "", expiresAt: 0 };
+    return { token: "", acquiredAt: 0, expiresAt: 0 };
+  }
+}
+
+export async function getReindexLockState({
+  client,
+  now = Date.now(),
+}: {
+  client: ReindexLockClient;
+  now?: number;
+}): Promise<ReindexLockState> {
+  try {
+    const document = await client.collections("emrn_search_controls").documents(LOCK_DOCUMENT_ID).retrieve();
+    const lock = parseLock(document);
+    return {
+      exists: true,
+      token: lock.token,
+      acquiredAt: lock.acquiredAt,
+      expiresAt: lock.expiresAt,
+      active: Boolean(lock.token && lock.expiresAt > now),
+    };
+  } catch {
+    return { exists: false, token: "", acquiredAt: 0, expiresAt: 0, active: false };
+  }
+}
+
+export async function removeExpiredReindexLock({
+  client,
+  now = Date.now(),
+}: {
+  client: ReindexLockClient;
+  now?: number;
+}) {
+  const lock = await getReindexLockState({ client, now });
+  if (!lock.exists || lock.active) return false;
+  try {
+    await client.collections("emrn_search_controls").documents(LOCK_DOCUMENT_ID).delete();
+    return true;
+  } catch {
+    return false;
   }
 }
 

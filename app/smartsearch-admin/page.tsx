@@ -60,6 +60,7 @@ type ReindexStatus = {
   min_records?: number;
   alias_swapped?: boolean;
   error?: string;
+  interrupted?: boolean;
   ms?: number;
 };
 
@@ -787,11 +788,11 @@ export default function SmartSearchAdminPage() {
                   borderRadius: 999,
                   padding: "8px 12px",
                   fontWeight: 900,
-                  color: reindexStatus?.status === "success" ? "#166534" : reindexStatus?.status === "running" ? "#92400e" : "#b91c1c",
-                  background: reindexStatus?.status === "success" ? "#dcfce7" : reindexStatus?.status === "running" ? "#fef3c7" : "#fee2e2",
+                  color: reindexStatus?.status === "success" ? "#166534" : reindexStatus?.status === "running" && !reindexStatus?.interrupted ? "#92400e" : "#b91c1c",
+                  background: reindexStatus?.status === "success" ? "#dcfce7" : reindexStatus?.status === "running" && !reindexStatus?.interrupted ? "#fef3c7" : "#fee2e2",
                 }}
               >
-                {reindexStatus?.status ? reindexStatus.status.toUpperCase() : "NOT LOADED"}
+                {reindexStatus?.interrupted ? "INTERRUPTED" : reindexStatus?.status ? reindexStatus.status.toUpperCase() : "NOT LOADED"}
               </span>
             </div>
 
