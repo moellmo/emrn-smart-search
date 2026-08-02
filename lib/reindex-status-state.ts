@@ -1,5 +1,5 @@
 export type ReindexStatusState = {
-  status?: "running" | "success" | "failed";
+  status?: "running" | "success" | "failed" | "completed_unconfirmed";
   started_at?: number;
   finished_at?: number;
   error?: string;

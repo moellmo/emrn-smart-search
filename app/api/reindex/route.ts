@@ -9,6 +9,7 @@ import {
 import { ensureReindexStatusCollection, saveReindexStatus } from "../../../lib/reindex-status";
 import { cleanupFailedProductCollection, cleanupOldProductCollections, shouldRunProductCollectionCleanup } from "../../../lib/product-collection-cleanup";
 import { acquireReindexLock, releaseReindexLock } from "../../../lib/reindex-lock";
+import { createTypesenseAliasSwitchTransport, switchAliasAfterValidation } from "../../../lib/typesense-alias-switch";
 
 const IMPORT_BATCH_SIZE = 250;
 
@@ -92,6 +93,7 @@ async function runReindexWithLock() {
   const startedAt = Date.now();
   const targetCollection = versionedProductCollectionName();
   let targetCollectionCreated = false;
+  let aliasSwitchStarted = false;
   const cleanupEnabled = process.env.TYPESENSE_COLLECTION_CLEANUP_ENABLED === "true";
   const dryRun = process.env.TYPESENSE_COLLECTION_CLEANUP_DRY_RUN === "true";
 
@@ -226,45 +228,36 @@ async function runReindexWithLock() {
     return NextResponse.json(payload, { status: 500 });
   }
 
-  const previousAlias = await typesenseAdmin
-    .aliases(PRODUCT_COLLECTION_ALIAS)
-    .retrieve()
-    .catch(() => null);
-
-  await typesenseAdmin.aliases().upsert(PRODUCT_COLLECTION_ALIAS, {
-    collection_name: targetCollection,
+  aliasSwitchStarted = true;
+  const aliasSwitch = await switchAliasAfterValidation({
+    transport: createTypesenseAliasSwitchTransport(),
+    aliasName: PRODUCT_COLLECTION_ALIAS,
+    targetCollection,
+    previousCollection: initialLiveTarget,
   });
 
-  const confirmedAlias = await typesenseAdmin
-    .aliases(PRODUCT_COLLECTION_ALIAS)
-    .retrieve()
-    .catch(() => null);
-
-  if (confirmedAlias?.collection_name !== targetCollection) {
-    // If the write could not be confirmed, keep cleanup off and restore the
-    // prior live target when one existed. Search never intentionally moves to
-    // an unverified collection.
-    if (previousAlias?.collection_name) {
-      await typesenseAdmin.aliases().upsert(PRODUCT_COLLECTION_ALIAS, {
-        collection_name: previousAlias.collection_name,
-      }).catch(() => null);
-    }
-
-    const cleanupWarnings: string[] = [];
-    await cleanupFailedTargetCollection(targetCollection, cleanupWarnings);
+  if (aliasSwitch.state !== "confirmed") {
+    // The staged collection has already passed import and smoke validation.
+    // Preserve it whenever alias state is uncertain; cleanup must never erase
+    // either side of a potentially successful alias switch.
+    const aliasStateIsAmbiguous = aliasSwitch.state === "ambiguous" || aliasSwitch.state === "rollback_failed";
     const payload = await saveReindexStatus({
-      status: "failed",
+      status: aliasStateIsAmbiguous ? "completed_unconfirmed" : "failed",
       started_at: startedAt,
       finished_at: Date.now(),
       live_alias: PRODUCT_COLLECTION_ALIAS,
-      previous_collection: previousAlias?.collection_name || "",
+      previous_collection: initialLiveTarget,
       target_collection: targetCollection,
       total_records: products.length,
       indexed_records: Number(collection.num_documents || 0),
       failed_count: 0,
       min_records: MIN_REINDEX_RECORDS,
-      error: "Reindex aborted after alias swap: production alias could not be confirmed.",
-      cleanup_warnings: cleanupWarnings,
+      error: aliasSwitch.state === "rejected"
+        ? "Reindex aborted: the production alias update was rejected."
+        : aliasSwitch.state === "rolled_back"
+          ? "Reindex aborted: the production alias repeatedly confirmed the wrong target and was restored."
+        : "Reindex completed with validated products, but requires manual alias verification: the production alias state was ambiguous.",
+      cleanup_warnings: ["[Typesense cleanup] validated staged collection retained while alias state is unresolved."],
       ms: Date.now() - startedAt,
     });
 
@@ -303,7 +296,7 @@ async function runReindexWithLock() {
     started_at: startedAt,
     finished_at: Date.now(),
     live_alias: PRODUCT_COLLECTION_ALIAS,
-    previous_collection: previousAlias?.collection_name || "",
+    previous_collection: initialLiveTarget,
     target_collection: targetCollection,
     total_records: products.length,
     indexed_records: Number(collection.num_documents || 0),
@@ -320,7 +313,7 @@ async function runReindexWithLock() {
   });
   } catch (error) {
     const cleanupWarnings: string[] = [];
-    if (targetCollectionCreated) await cleanupFailedTargetCollection(targetCollection, cleanupWarnings);
+    if (targetCollectionCreated && !aliasSwitchStarted) await cleanupFailedTargetCollection(targetCollection, cleanupWarnings);
     const payload = await saveReindexStatus({
       status: "failed",
       started_at: startedAt,

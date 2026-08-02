@@ -7,7 +7,7 @@ const STATUS_DOC_ID = "reindex_status";
 
 export type ReindexStatus = {
   ok: boolean;
-  status: "running" | "success" | "failed";
+  status: "running" | "success" | "failed" | "completed_unconfirmed";
   started_at: number;
   finished_at: number;
   live_alias: string;

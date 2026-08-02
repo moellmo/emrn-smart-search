@@ -48,7 +48,7 @@ type PreviewProduct = {
 
 type ReindexStatus = {
   ok?: boolean;
-  status?: "running" | "success" | "failed";
+  status?: "running" | "success" | "failed" | "completed_unconfirmed";
   started_at?: number;
   finished_at?: number;
   live_alias?: string;
@@ -788,8 +788,8 @@ export default function SmartSearchAdminPage() {
                   borderRadius: 999,
                   padding: "8px 12px",
                   fontWeight: 900,
-                  color: reindexStatus?.status === "success" ? "#166534" : reindexStatus?.status === "running" && !reindexStatus?.interrupted ? "#92400e" : "#b91c1c",
-                  background: reindexStatus?.status === "success" ? "#dcfce7" : reindexStatus?.status === "running" && !reindexStatus?.interrupted ? "#fef3c7" : "#fee2e2",
+                  color: reindexStatus?.status === "success" ? "#166534" : (reindexStatus?.status === "running" || reindexStatus?.status === "completed_unconfirmed") && !reindexStatus?.interrupted ? "#92400e" : "#b91c1c",
+                  background: reindexStatus?.status === "success" ? "#dcfce7" : (reindexStatus?.status === "running" || reindexStatus?.status === "completed_unconfirmed") && !reindexStatus?.interrupted ? "#fef3c7" : "#fee2e2",
                 }}
               >
                 {reindexStatus?.interrupted ? "INTERRUPTED" : reindexStatus?.status ? reindexStatus.status.toUpperCase() : "NOT LOADED"}
